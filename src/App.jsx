@@ -63,7 +63,7 @@ class ErrorBoundary extends React.Component {
       return (
         <div className="p-8 font-sans text-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
-          <p className="mb-4">Please verify your Firebase Config keys in <code>src/App.jsx</code></p>
+          <p className="mb-4">Please check the console for details.</p>
           <pre className="bg-gray-100 p-4 rounded text-left overflow-auto text-sm text-red-800 border border-red-200">
             {this.state.error && this.state.error.toString()}
           </pre>
@@ -322,6 +322,7 @@ function App() {
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState("");
   const [importStatus, setImportStatus] = useState(null);
+  const [adminSearchQuery, setAdminSearchQuery] = useState(""); // <--- FIXED: Added this missing state
   const [customSections, setCustomSections] = useState([]);
   const [dbCategoryCounts, setDbCategoryCounts] = useState({});
   const [notes, setNotes] = useState(() => { 
@@ -333,6 +334,12 @@ function App() {
   const [showNoteWidget, setShowNoteWidget] = useState(true);
   const [isWelcomeMinimized, setIsWelcomeMinimized] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [sidebarTab, setSidebarTab] = useState('ai');
+  const [aiResponse, setAiResponse] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [pendingScrollAnchor, setPendingScrollAnchor] = useState(null);
 
   // Editor States
   const [editingId, setEditingId] = useState(null);
@@ -342,6 +349,9 @@ function App() {
   const [sectionContent, setSectionContent] = useState("");
   const [sectionPersistent, setSectionPersistent] = useState(false);
   const [sectionExpiry, setSectionExpiry] = useState("");
+  const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
+  const [loginStep, setLoginStep] = useState('password');
+  const [mfaInput, setMfaInput] = useState("");
 
   // Import Refs
   const pagesRef = useRef(null);
@@ -408,6 +418,12 @@ function App() {
       return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,12);
   }, [articles, dbCategoryCounts]);
 
+  // Updated categories definition
+  const categories = useMemo(() => {
+     if (Object.keys(dbCategoryCounts).length > 0) return Object.keys(dbCategoryCounts).sort();
+     return Array.from(new Set(articles.map(a => a.category))).sort();
+  }, [articles, dbCategoryCounts]);
+
   const filteredArticles = useMemo(() => {
     let result = articles;
     if (searchQuery) {
@@ -440,8 +456,9 @@ function App() {
 
   const handleLogin = (e) => {
       e.preventDefault();
-      if(passwordInput === "admin123") { setIsAuthenticated(true); setPasswordInput(""); setLoginError(""); }
-      else setLoginError("Incorrect password");
+      if(passwordInput === "admin123") { setLoginStep('mfa'); showNotification("Code: 123456"); }
+      else if(mfaInput === "123456") { setIsAuthenticated(true); setPasswordInput(""); setMfaInput(""); setLoginStep('password'); }
+      else setLoginError("Incorrect password or code");
   };
 
   const handleSaveArticle = async () => {
@@ -556,9 +573,12 @@ function App() {
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {Object.entries(categoryStats).map(([cat, n]) => (
-                    <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md">
-                        <div className="font-bold text-gray-800">{cat}</div>
-                        <div className="text-xs text-gray-500">{n} articles</div>
+                    <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-end" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+                        <div className="relative z-10 text-white">
+                            <div className="font-bold">{cat}</div>
+                            <div className="text-xs opacity-80">{n} articles</div>
+                        </div>
                     </div>
                 ))}
             </div>
@@ -602,8 +622,10 @@ function App() {
               <button onClick={handleBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 font-medium bg-gray-100 px-4 py-2 rounded-lg transition-colors hover:bg-gray-200 w-fit"><ArrowLeft size={16}/> Back</button>
               <div className="bg-white p-8 md:p-12 rounded-2xl border shadow-sm">
                   <div className="mb-6 border-b pb-6">
-                      <Badge theme={currentTheme} onClick={() => { setActiveCategory(selectedArticle.category); setView('search'); }}>{selectedArticle.category}</Badge>
-                      <h1 className="text-4xl font-bold mt-4 mb-2">{selectedArticle.title}</h1>
+                      <div className="flex justify-between items-start">
+                         <h1 className="text-4xl font-bold mt-4 mb-2 text-gray-900">{selectedArticle.title}</h1>
+                         <Badge theme={currentTheme} onClick={() => { setActiveCategory(selectedArticle.category); setView('search'); }}>{selectedArticle.category}</Badge>
+                      </div>
                   </div>
                   <div className="prose max-w-none">
                       <HtmlContentRenderer html={selectedArticle.content} theme={currentTheme} onNavigate={handleNavigateByTitle} />
@@ -634,9 +656,9 @@ function App() {
         <div className="max-w-sm mx-auto mt-20 p-8 bg-white rounded-xl shadow-lg text-center">
             <h2 className="text-xl font-bold mb-4">Admin Login</h2>
             <form onSubmit={handleLogin} className="space-y-4">
-                <input type="password" value={passwordInput} onChange={e=>setPasswordInput(e.target.value)} className="w-full p-2 border rounded" placeholder="Password (admin123)" />
+                {loginStep === 'password' ? <input type="password" value={passwordInput} onChange={e=>setPasswordInput(e.target.value)} className="w-full p-2 border rounded" placeholder="Password (admin123)" /> : <input value={mfaInput} onChange={e=>setMfaInput(e.target.value)} className="w-full p-2 border rounded" placeholder="Code (123456)" />}
                 {loginError && <p className="text-red-500 text-sm">{loginError}</p>}
-                <button className="w-full py-2 bg-indigo-600 text-white rounded font-bold">Login</button>
+                <button className="w-full py-2 bg-indigo-600 text-white rounded font-bold">Next</button>
             </form>
         </div>
     );
@@ -654,7 +676,16 @@ function App() {
                     <div>
                         <h2 className="text-xl font-bold mb-4">Create New Article</h2>
                         <input className="w-full mb-4 p-2 border rounded" placeholder="Title" value={editorTitle} onChange={e=>setEditorTitle(e.target.value)} />
-                        <input className="w-full mb-4 p-2 border rounded" placeholder="Category" value={editorCategory} onChange={e=>setEditorCategory(e.target.value)} />
+                        <div className="relative mb-4">
+                          <input className="w-full p-2 border rounded" placeholder="Category" value={editorCategory} onChange={e=>setEditorCategory(e.target.value)} onFocus={() => setShowCategorySuggestions(true)} onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 200)} />
+                          {showCategorySuggestions && (
+                            <div className="absolute z-10 w-full bg-white border border-gray-200 rounded shadow-lg max-h-48 overflow-y-auto">
+                              {categories.filter(c => c.toLowerCase().includes(editorCategory.toLowerCase())).map(c => (
+                                <div key={c} className="p-2 hover:bg-gray-100 cursor-pointer" onClick={() => setEditorCategory(c)}>{c}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         <RichTextEditor content={editorContent} onChange={setEditorContent} theme={currentTheme} />
                         <button onClick={handleSaveArticle} className="mt-4 px-4 py-2 bg-green-600 text-white rounded">Save</button>
                     </div>
