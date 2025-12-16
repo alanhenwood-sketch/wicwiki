@@ -63,7 +63,7 @@ class ErrorBoundary extends React.Component {
       return (
         <div className="p-8 font-sans text-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
-          <p className="mb-4">Please check the console for details.</p>
+          <p className="mb-4">Please verify your Firebase Config keys in <code>src/App.jsx</code></p>
           <pre className="bg-gray-100 p-4 rounded text-left overflow-auto text-sm text-red-800 border border-red-200">
             {this.state.error && this.state.error.toString()}
           </pre>
@@ -117,9 +117,6 @@ const INSPIRATIONAL_VERSES = [
   { text: "I can do all things through Christ...", ref: "Philippians 4:13" },
   { text: "The LORD is my shepherd...", ref: "Psalm 23:1" },
 ];
-
-// --- Helper Functions ---
-const makeId = (t) => t ? t.trim().replace(/\s+/g, '_').replace(/[^\w\-_]/g, '') : '';
 
 // --- Components ---
 const NavItem = ({ icon: Icon, label, active, onClick, theme }) => {
@@ -322,7 +319,7 @@ function App() {
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState("");
   const [importStatus, setImportStatus] = useState(null);
-  const [adminSearchQuery, setAdminSearchQuery] = useState(""); // <--- FIXED: Added this missing state
+  const [adminSearchQuery, setAdminSearchQuery] = useState("");
   const [customSections, setCustomSections] = useState([]);
   const [dbCategoryCounts, setDbCategoryCounts] = useState({});
   const [notes, setNotes] = useState(() => { 
@@ -418,7 +415,6 @@ function App() {
       return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,12);
   }, [articles, dbCategoryCounts]);
 
-  // Updated categories definition
   const categories = useMemo(() => {
      if (Object.keys(dbCategoryCounts).length > 0) return Object.keys(dbCategoryCounts).sort();
      return Array.from(new Set(articles.map(a => a.category))).sort();
@@ -456,9 +452,14 @@ function App() {
 
   const handleLogin = (e) => {
       e.preventDefault();
-      if(passwordInput === "admin123") { setLoginStep('mfa'); showNotification("Code: 123456"); }
-      else if(mfaInput === "123456") { setIsAuthenticated(true); setPasswordInput(""); setMfaInput(""); setLoginStep('password'); }
-      else setLoginError("Incorrect password or code");
+      setLoginError("");
+      if(loginStep === "password") {
+          if(passwordInput === "admin123") { setLoginStep('mfa'); showNotification("Code: 123456"); }
+          else setLoginError("Incorrect password");
+      } else {
+          if(mfaInput === "123456") { setIsAuthenticated(true); setPasswordInput(""); setMfaInput(""); setLoginStep('password'); }
+          else setLoginError("Invalid Verification Code");
+      }
   };
 
   const handleSaveArticle = async () => {
@@ -561,7 +562,31 @@ function App() {
       <div className={`max-w-4xl mx-auto space-y-12 animate-fadeIn ${currentTheme.font} ${currentTheme.textSize}`}>
         <div className="text-center py-12">
             <h1 className="text-4xl font-bold text-gray-900 mb-6">{siteTitle}</h1>
-            <div className="max-w-xl mx-auto mb-8 p-6 bg-indigo-50 rounded-2xl text-gray-700">{siteDescription}</div>
+            <div className="max-w-2xl mx-auto mb-10 px-4">
+              <div className={`relative rounded-2xl ${currentTheme.colors.bgSoft} border ${currentTheme.colors.border} shadow-sm text-center transition-all duration-300 ${isWelcomeMinimized ? 'p-4' : 'p-6'}`}>
+                <button 
+                  onClick={() => setIsWelcomeMinimized(!isWelcomeMinimized)}
+                  className={`absolute top-2 right-2 p-1 rounded-full hover:bg-black/5 ${currentTheme.colors.text} opacity-50 hover:opacity-100 transition-opacity`}
+                  title={isWelcomeMinimized ? "Expand" : "Minimize"}
+                >
+                  {isWelcomeMinimized ? <Maximize2 size={16}/> : <Minimize2 size={16}/>}
+                </button>
+
+                <div className={`${currentTheme.textColor} ${isWelcomeMinimized ? 'text-sm' : 'text-lg'} leading-relaxed font-medium`}>
+                  {isWelcomeMinimized ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="truncate max-w-md">{siteDescription}</span>
+                      <button onClick={() => setIsWelcomeMinimized(false)} className={`text-xs font-bold underline ${currentTheme.colors.text} whitespace-nowrap`}>Read More</button>
+                    </div>
+                  ) : (
+                    siteDescription
+                  )}
+                </div>
+                {!isWelcomeMinimized && (
+                  <div className={`absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 ${currentTheme.colors.bgSoft} border-b border-r ${currentTheme.colors.border} transform rotate-45`}></div>
+                )}
+              </div>
+            </div>
             <form onSubmit={e => {e.preventDefault(); setView('search');}} className="relative max-w-lg mx-auto">
                 <input className="w-full pl-12 pr-4 py-4 rounded-xl border shadow-sm" placeholder="Search library..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"/>
@@ -615,13 +640,14 @@ function App() {
     </div>
   );
 
+  // --- Article Render (Restored Layout) ---
   const renderArticle = () => {
       if(!selectedArticle) return null;
       return (
-          <div className={`max-w-5xl mx-auto ${currentTheme.font}`}>
-              <button onClick={handleBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 font-medium bg-gray-100 px-4 py-2 rounded-lg transition-colors hover:bg-gray-200 w-fit"><ArrowLeft size={16}/> Back</button>
-              <div className="bg-white p-8 md:p-12 rounded-2xl border shadow-sm">
-                  <div className="mb-6 border-b pb-6">
+          <div className={`max-w-6xl mx-auto flex flex-col lg:flex-row gap-8 animate-fadeIn relative ${currentTheme.font} ${currentTheme.textSize}`}>
+              <div className="flex-1 bg-white min-h-[80vh] p-8 md:p-12 shadow-sm rounded-xl border border-gray-100">
+                <button onClick={handleBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 font-medium bg-gray-100 px-4 py-2 rounded-lg transition-colors hover:bg-gray-200 w-fit"><ArrowLeft size={16}/> Back</button>
+                  <div className="mb-8 border-b border-gray-100 pb-6">
                       <div className="flex justify-between items-start">
                          <h1 className="text-4xl font-bold mt-4 mb-2 text-gray-900">{selectedArticle.title}</h1>
                          <Badge theme={currentTheme} onClick={() => { setActiveCategory(selectedArticle.category); setView('search'); }}>{selectedArticle.category}</Badge>
@@ -630,6 +656,43 @@ function App() {
                   <div className="prose max-w-none">
                       <HtmlContentRenderer html={selectedArticle.content} theme={currentTheme} onNavigate={handleNavigateByTitle} />
                   </div>
+              </div>
+              
+              {/* Restored Sidebar */}
+              <div className="w-full lg:w-80 flex-shrink-0">
+                <div className="sticky top-20 flex flex-col gap-4">
+                  <div className="flex bg-white rounded-lg p-1 shadow-sm border border-gray-200">
+                    <button onClick={() => setSidebarTab('ai')} className={`flex-1 py-2 text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-colors ${sidebarTab === 'ai' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 hover:text-gray-900'}`}><Sparkles size={16} /> AI Assistant</button>
+                    <button onClick={() => setSidebarTab('notes')} className={`flex-1 py-2 text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-colors ${sidebarTab === 'notes' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 hover:text-gray-900'}`}><PenLine size={16} /> Notes</button>
+                  </div>
+                  
+                  {sidebarTab === 'ai' && (
+                    <div className={`bg-gradient-to-br from-gray-50 to-white p-6 rounded-xl border border-gray-200 shadow-sm`}>
+                      <div className="space-y-3 mb-6">
+                        <button onClick={() => callGemini('summary')} className={`w-full text-left px-4 py-3 bg-white hover:${currentTheme.colors.bgSoft} border border-gray-200 rounded-lg text-sm font-medium ${currentTheme.textColor} transition-colors flex items-center gap-2`}><FileText size={16} className="text-blue-500" /> Summarize Article</button>
+                        <button onClick={() => callGemini('devotional')} className={`w-full text-left px-4 py-3 bg-white hover:${currentTheme.colors.bgSoft} border border-gray-200 rounded-lg text-sm font-medium ${currentTheme.textColor} transition-colors flex items-center gap-2`}><Book size={16} className="text-emerald-500" /> Generate Devotional</button>
+                      </div>
+                      <div className="border-t border-gray-200 pt-4">
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Ask a Question</label>
+                        <div className="relative"><input type="text" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && callGemini('chat', aiPrompt)} placeholder="Ask about this topic..." className={`w-full pl-3 pr-10 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none ${currentTheme.colors.ring}`} /><button onClick={() => callGemini('chat', aiPrompt)} className={`absolute right-2 top-1/2 -translate-y-1/2 ${currentTheme.colors.text} hover:opacity-80`}><Send size={16} /></button></div>
+                      </div>
+                      {aiPanelOpen && <div className="mt-6 pt-6 border-t border-gray-200 animate-fadeIn">{isAiLoading ? (<div className="flex items-center gap-2 text-sm text-gray-500 justify-center py-4"><Loader size={16} className="animate-spin" /> Thinking...</div>) : (<div className="bg-white p-4 rounded-lg border border-gray-100 text-sm text-gray-700 leading-relaxed shadow-inner max-h-80 overflow-y-auto"><div className="flex justify-between items-center mb-2"><span className={`text-xs font-bold ${currentTheme.colors.text} uppercase`}>AI Response</span>
+                      <div className="flex gap-1">
+                          <button onClick={()=>{}} className="text-gray-400 hover:text-gray-600 p-1" title="Export Response"><Download size={14}/></button>
+                          <button onClick={() => setAiPanelOpen(false)} className="text-gray-400 hover:text-gray-600 p-1" title="Close"><X size={14}/></button>
+                      </div>
+                      </div><div className="whitespace-pre-wrap">{aiResponse}</div></div>)}</div>}
+                    </div>
+                  )}
+
+                  {sidebarTab === 'notes' && (
+                    <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 shadow-sm h-full flex flex-col">
+                      <div className="flex items-center justify-between mb-2"><span className="text-xs font-bold text-yellow-800 uppercase tracking-wider">My Notes</span><div className="flex gap-1"><button onClick={() => handleShareNote(selectedArticle.id)} className="text-yellow-700 hover:text-yellow-900 p-1" title="Share Note to App"><Share2 size={16}/></button><button onClick={() => exportNotes(false, selectedArticle.id)} className="text-yellow-700 hover:text-yellow-900 p-1" title="Export this note"><Download size={16}/></button></div></div>
+                      <textarea className={`flex-1 w-full bg-white border border-yellow-200 rounded-lg p-3 text-sm text-gray-700 leading-relaxed focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none resize-none min-h-[300px]`} placeholder="Take notes here..." value={notes[selectedArticle.id] || ""} onChange={(e) => handleNoteChange(selectedArticle.id, e.target.value)}></textarea>
+                      <div className="mt-2 text-xs text-yellow-700 flex items-center justify-between"><span>Auto-saved to browser</span><span>{notes[selectedArticle.id]?.length || 0} chars</span></div>
+                    </div>
+                  )}
+                </div>
               </div>
               <FloatingNotesWidget article={selectedArticle} noteContent={notes[selectedArticle.id] || ''} onChange={(id, txt) => setNotes({...notes, [id]: txt})} onExport={() => {}} onShare={() => {}} visible={showNoteWidget} setVisible={setShowNoteWidget} theme={currentTheme} />
           </div>
