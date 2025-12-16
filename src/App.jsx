@@ -42,12 +42,12 @@ import {
 // --- CONFIGURATION SECTION ---
 // TODO: Replace this object with the one from your Firebase Console
 const liveFirebaseConfig = {
-  apiKey: "PASTE_YOUR_API_KEY_HERE",
-  authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "PASTE_YOUR_PROJECT_ID",
-  storageBucket: "PASTE_YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "PASTE_YOUR_SENDER_ID",
-  appId: "PASTE_YOUR_APP_ID"
+  apiKey: "AIzaSyC45o7fJuF_akzIZ0eBo1UGGx78ZCnCEk4",
+  authDomain: "wicwiki-24d11.firebaseapp.com",
+  projectId: "wicwiki-24d11",
+  storageBucket: "wicwiki-24d11.firebasestorage.app",
+  messagingSenderId: "817508613146",
+  appId: "1:817508613146:web:b3e2afa79e539ac75265a3"
 };
 
 // --- ERROR BOUNDARY ---
