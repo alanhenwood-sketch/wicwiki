@@ -576,10 +576,13 @@ function App() {
     }
   };
 
-  // --- MISSING HANDLERS ADDED HERE ---
-
   const handleAddSection = async () => {
       if(!sectionContent) return;
+      // FIX: Ensure a fallback date or strict persistence if no date selected
+      if (!sectionPersistent && !sectionExpiry) {
+        showNotification("Please select an expiry date or make it persistent.");
+        return;
+      }
       try {
           await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sections'), {
               content: sectionContent,
@@ -633,8 +636,6 @@ function App() {
       a.click();
       URL.revokeObjectURL(url);
   };
-
-  // ------------------------------------
 
   const handleDeleteAll = async () => {
     if(!confirm("DANGER: This will delete ALL articles. This cannot be undone. Are you sure?")) return;
@@ -836,6 +837,7 @@ function App() {
                 )}
               </div>
             </div>
+            {/* FIX 1: Clear searchQuery when searching from home */}
             <form onSubmit={e => {e.preventDefault(); setView('search');}} className="relative max-w-lg mx-auto">
                 <input className="w-full pl-12 pr-4 py-4 rounded-xl border shadow-sm" placeholder="Search library..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"/>
@@ -847,7 +849,8 @@ function App() {
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {Object.entries(categoryStats).map(([cat, n]) => (
-                    <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
+                    // FIX 1: Added setSearchQuery("")
+                    <div key={cat} onClick={()=>{setActiveCategory(cat); setSearchQuery(""); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
                         <div className="relative z-10 text-white font-bold text-lg leading-tight p-2 drop-shadow-md">{cat}</div>
                         <div className="relative z-10 self-end p-2">
@@ -899,7 +902,7 @@ function App() {
                   <div className="mb-8 border-b border-gray-100 pb-6">
                       <div className="flex justify-between items-start">
                          <h1 className="text-4xl font-bold mt-4 mb-2 text-gray-900">{selectedArticle.title}</h1>
-                         <Badge theme={currentTheme} onClick={() => { setActiveCategory(selectedArticle.category); setView('search'); }}>{selectedArticle.category}</Badge>
+                         <Badge theme={currentTheme} onClick={() => { setActiveCategory(selectedArticle.category); setSearchQuery(""); setView('search'); }}>{selectedArticle.category}</Badge>
                       </div>
                   </div>
                   <div className="prose max-w-none">
@@ -1012,7 +1015,8 @@ function App() {
                             <div className="text-sm text-gray-500 mb-4">{importStatus}</div>
                             <div className="flex gap-2">
                                 <button onClick={()=>{abortImportRef.current=true}} className="px-4 py-2 bg-yellow-100 rounded">Pause</button>
-                                <button onClick={()=>{if(pagesRef.current){abortImportRef.current=false; setImportState('active'); executeImportLoop(pagesRef.current);}}} className="px-4 py-2 bg-green-100 rounded">Resume</button>
+                                {/* FIX 2: Corrected executeImportLoop to runImport */}
+                                <button onClick={()=>{if(pagesRef.current){abortImportRef.current=false; setImportState('active'); runImport(pagesRef.current);}}} className="px-4 py-2 bg-green-100 rounded">Resume</button>
                             </div>
                         </div>}
                     </div>
