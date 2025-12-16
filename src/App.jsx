@@ -41,6 +41,7 @@ import {
 
 // --- CONFIGURATION SECTION ---
 // TODO: Replace this object with the one from your Firebase Console
+// If you haven't done this yet, the app will show a setup screen.
 const liveFirebaseConfig = {
   apiKey: "AIzaSyC45o7fJuF_akzIZ0eBo1UGGx78ZCnCEk4",
   authDomain: "wicwiki-24d11.firebaseapp.com",
@@ -50,30 +51,57 @@ const liveFirebaseConfig = {
   appId: "1:817508613146:web:b3e2afa79e539ac75265a3"
 };
 
-// Logic: Use environment config if available (Preview), otherwise use the object above (Live)
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-  ? JSON.parse(__firebase_config) 
-  : liveFirebaseConfig;
-
-// Initialize Firebase safely
-let app, auth, db;
-let firebaseError = null;
-try {
-  // Only initialize if we have a valid config (basic check)
-  if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "PASTE_YOUR_API_KEY_HERE") {
-      app = initializeApp(firebaseConfig);
-      auth = getAuth(app);
-      db = getFirestore(app);
-  } else if (typeof __firebase_config === 'undefined') {
-      firebaseError = "Configuration Missing";
+// --- ERROR BOUNDARY (The Life Raft) ---
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
   }
-} catch (e) {
-  console.error("Firebase initialization failed:", e);
-  firebaseError = e.message;
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 font-sans text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
+          <p className="mb-4">Please verify your Firebase Config keys in <code>src/App.jsx</code></p>
+          <pre className="bg-gray-100 p-4 rounded text-left overflow-auto text-sm text-red-800 border border-red-200">
+            {this.state.error && this.state.error.toString()}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
-// App ID - Use a specific one for the preview, or 'production' for live
-const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'production-v1';
+// --- INITIALIZATION ---
+let app, auth, db;
+let initError = null;
+
+try {
+  // Determine config source safely using window check to avoid ReferenceErrors
+  const envConfig = (typeof window !== 'undefined' && window.__firebase_config) 
+    ? JSON.parse(window.__firebase_config) 
+    : null;
+    
+  const configToUse = envConfig || liveFirebaseConfig;
+
+  // Check if keys are placeholder values
+  if (configToUse.apiKey === "PASTE_YOUR_API_KEY_HERE") {
+    initError = "CONFIGURATION_NEEDED";
+  } else {
+    app = initializeApp(configToUse);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  }
+} catch (e) {
+  console.error("Firebase init failed:", e);
+  initError = e.message;
+}
+
+// App ID Management
+const rawAppId = (typeof window !== 'undefined' && window.__app_id) ? window.__app_id : 'production-v1';
 const appId = rawAppId.replace(/[\/\\#\?]/g, '_'); 
 
 // --- Theme Config ---
@@ -96,17 +124,16 @@ const INSPIRATIONAL_VERSES = [
 ];
 
 // --- Components ---
-const NavItem = ({ icon: Icon, label, active, onClick, theme }) => {
-  const textCol = theme.colors.text;
-  const bgCol = theme.colors.bgSoft;
+const NavItem = ({ icon: Icon, label, active, onClick, theme, title, colorClass, bgClass }) => {
+  const textCol = colorClass || theme.colors.text;
+  const bgCol = bgClass || theme.colors.bgSoft;
   return (
-    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-50 hover:text-gray-900`}`}>
+    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-50 hover:text-gray-900`}`} title={title || label}>
       <Icon size={18} className={active ? textCol : "text-gray-400"} />
       <span className="hidden md:inline">{label}</span>
     </button>
   );
 };
-
 const Badge = ({ children, theme, onClick }) => (
   <span onClick={(e) => { if (onClick) { e.stopPropagation(); onClick(); } }} className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${theme.colors.bgSoft} ${theme.colors.text} ${onClick ? 'cursor-pointer hover:opacity-80 hover:underline' : ''}`} title={onClick ? "View category" : ""}>{children}</span>
 );
@@ -154,6 +181,10 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); onNavigate(props['data-wiki-link']); };
           props.className = (props.className || '') + ` cursor-pointer ${theme.colors.text} hover:underline font-bold`;
         }
+        if (props['data-wiki-anchor']) {
+          props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); const el = document.getElementById(props['data-wiki-anchor']); if(el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+          props.className = (props.className || '') + ` cursor-pointer ${theme.colors.text} hover:underline font-medium`;
+        }
         return React.createElement(tagName, props, node.childNodes.length > 0 ? renderNodes(node.childNodes) : null);
       }
       return null;
@@ -174,24 +205,20 @@ const VerseOfTheDayWidget = () => (
 );
 
 // --- MAIN APP COMPONENT ---
-export default function App() {
-  if (firebaseError) {
+function App() {
+  if (initError === "CONFIGURATION_NEEDED") {
       return (
           <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
               <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-red-100 text-center">
                   <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32}/></div>
                   <h1 className="text-2xl font-bold text-gray-900 mb-2">Configuration Needed</h1>
-                  <p className="text-gray-600 mb-6">The app cannot connect to the database. You need to update the configuration in <code>src/App.jsx</code>.</p>
-                  <div className="bg-gray-900 text-gray-200 text-left p-4 rounded-lg text-xs font-mono overflow-x-auto mb-6">
-                      const firebaseConfig = &#123;<br/>
-                      &nbsp;&nbsp;apiKey: "PASTE_YOUR_API_KEY_HERE",<br/>
-                      &nbsp;&nbsp;// ... replace with your keys<br/>
-                      &#125;;
-                  </div>
-                  <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700">Go to Firebase Console <ExternalLink size={16}/></a>
+                  <p className="text-gray-600 mb-6">Update <code>src/App.jsx</code> with your Firebase keys.</p>
               </div>
           </div>
       );
+  }
+  if (initError) {
+      throw new Error("Firebase Failed: " + initError);
   }
 
   // --- State ---
@@ -238,7 +265,7 @@ export default function App() {
     if (!auth) return;
     const initAuth = async () => {
        try {
-         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
+         if (typeof window !== 'undefined' && window.__initial_auth_token) await signInWithCustomToken(auth, window.__initial_auth_token);
          else await signInAnonymously(auth);
        } catch (e) { console.error("Auth failed:", e); }
     };
@@ -274,6 +301,7 @@ export default function App() {
 
   // --- Helpers ---
   const handleArticleClick = (a) => { setSelectedArticle(a); setView('article'); };
+  const handleLogout = () => { setIsAuthenticated(false); setView('home'); };
   
   const handleNavigateByTitle = async (target) => {
       const title = target.split('#')[0];
@@ -405,7 +433,7 @@ export default function App() {
             </form>
         </div>
         <VerseOfTheDayWidget />
-        {activeSections.length > 0 && <div className="space-y-8">{activeSections.map(s => <div key={s.id} className="bg-white p-8 rounded-xl shadow-sm border"><HtmlContentRenderer html={s.content} theme={currentTheme} onNavigate={()=>{}}/></div>)}</div>}
+        {customSections.length > 0 && <div className="space-y-8">{customSections.map(s => <div key={s.id} className="bg-white p-8 rounded-xl shadow-sm border"><HtmlContentRenderer html={s.content} theme={currentTheme} onNavigate={()=>{}}/></div>)}</div>}
         <div>
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -429,6 +457,24 @@ export default function App() {
             </div>
         </div>
       </div>
+  );
+
+  const renderSearch = () => (
+    <div className={`max-w-5xl mx-auto ${currentTheme.font}`}>
+        <div className="mb-6 flex items-center gap-4">
+            <input className="flex-1 p-3 border rounded-lg" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Filter results..." />
+            {activeCategory && <button onClick={() => setActiveCategory(null)} className="px-3 py-1 bg-gray-100 rounded-lg text-sm flex items-center gap-1">Category: {activeCategory} <X size={14}/></button>}
+        </div>
+        <div className="grid gap-4">
+            {articles.map(a => (
+                <div key={a.id} onClick={() => handleArticleClick(a)} className="p-6 bg-white rounded-xl border border-gray-200 hover:shadow-md cursor-pointer">
+                    <h3 className="text-xl font-bold text-gray-900 mb-1">{a.title}</h3>
+                    <Badge theme={currentTheme}>{a.category}</Badge>
+                </div>
+            ))}
+        </div>
+        {articles.length >= limitCount && <button onClick={() => setLimitCount(l => l + 50)} className="w-full mt-8 py-3 bg-gray-100 rounded-xl font-bold text-gray-600">Load More</button>}
+    </div>
   );
 
   const renderArticle = () => {
@@ -463,10 +509,10 @@ export default function App() {
     return (
         <div className="max-w-6xl mx-auto flex gap-8">
             <div className="w-64 space-y-2">
-                <button onClick={()=>setAdminTab('manage')} className={`w-full text-left p-3 rounded ${adminTab==='manage'?'bg-indigo-50 text-indigo-700':''}`}>Manage</button>
-                <button onClick={()=>setAdminTab('import')} className={`w-full text-left p-3 rounded ${adminTab==='import'?'bg-indigo-50 text-indigo-700':''}`}>Import XML</button>
-                <button onClick={()=>setAdminTab('settings')} className={`w-full text-left p-3 rounded ${adminTab==='settings'?'bg-indigo-50 text-indigo-700':''}`}>Settings</button>
-                <button onClick={handleLogout} className="w-full text-left p-3 rounded text-red-600">Logout</button>
+                <NavItem icon={PenTool} label="Manage" active={adminTab==='manage'} onClick={()=>setAdminTab('manage')} theme={currentTheme} />
+                <NavItem icon={Upload} label="Import XML" active={adminTab==='import'} onClick={()=>setAdminTab('import')} theme={currentTheme} />
+                <NavItem icon={Settings} label="Settings" active={adminTab==='settings'} onClick={()=>setAdminTab('settings')} theme={currentTheme} />
+                <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg text-red-600 hover:bg-red-50 w-full"><LogOut size={18}/> Logout</button>
             </div>
             <div className="flex-1 bg-white p-8 rounded-xl border">
                 {adminTab === 'import' && (
@@ -517,3 +563,14 @@ export default function App() {
     </div>
   );
 }
+
+// --- APP WRAPPER ---
+function AppWrapper() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+export default AppWrapper;
