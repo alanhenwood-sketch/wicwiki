@@ -551,7 +551,13 @@ function App() {
   };
 
   const handleSaveArticle = async () => {
-    const articleData = { title: editorTitle, category: editorCategory || "Uncategorized", content: editorContent, lastUpdated: new Date().toISOString().split('T')[0] };
+    // FIX: Trim category to avoid mismatch issues
+    const articleData = { 
+        title: editorTitle, 
+        category: (editorCategory || "Uncategorized").trim(), 
+        content: editorContent, 
+        lastUpdated: new Date().toISOString().split('T')[0] 
+    };
     try {
       if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'articles', editingId), articleData); showNotification("Updated!"); } 
       else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), { ...articleData, createdAt: serverTimestamp() }); showNotification("Published!"); }
@@ -636,7 +642,11 @@ function App() {
 
   const exportNotes = (all = false, id = null) => {
       const content = all 
-        ? Object.entries(notes).map(([k,v]) => `Article ID: ${k}\n${v}\n-------------------`).join('\n\n')
+        ? Object.entries(notes).map(([k,v]) => {
+            const article = articles.find(a => a.id === k);
+            const title = article ? article.title : `Unknown Article (ID: ${k})`;
+            return `Article: ${title}\n${v}\n-------------------`;
+        }).join('\n\n')
         : (notes[id] || "");
       
       const blob = new Blob([content], { type: 'text/plain' });
@@ -857,9 +867,9 @@ function App() {
         <div>
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {Object.entries(categoryStats).map(([cat, n]) => (
+                {/* FIX: Map directly over the array, do NOT use Object.entries on an array */}
+                {categoryStats.map(([cat, n]) => (
                     <div key={cat} onClick={()=>{setActiveCategory(cat); setSearchQuery(""); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ background: getCategoryImage(cat), backgroundSize: 'cover' }}>
-                        {/* Removed image overlay logic in favor of pure CSS gradients for consistency */}
                         <div className="absolute inset-0 bg-black/10 hover:bg-black/0 transition-colors"></div>
                         <div className="relative z-10 text-white font-bold text-lg leading-tight p-2 drop-shadow-md break-words">{cat}</div>
                         <div className="relative z-10 self-end p-2">
@@ -972,12 +982,27 @@ function App() {
             )}
           </div>
           <div className="grid gap-4">
-              {Object.entries(notes).map(([id, text]) => (
-                  <div key={id} className="p-4 bg-yellow-50 rounded-xl border border-yellow-200">
-                      <div className="font-bold text-yellow-900 mb-2">Article ID: {id}</div>
-                      <div className="whitespace-pre-wrap text-sm text-gray-700">{text}</div>
-                  </div>
-              ))}
+              {Object.entries(notes).map(([id, text]) => {
+                  const article = articles.find(a => a.id === id);
+                  const title = article ? article.title : `Unknown Article (ID: ${id})`;
+
+                  return (
+                    <div key={id} className="p-4 bg-yellow-50 rounded-xl border border-yellow-200 hover:shadow-sm transition-shadow">
+                        <div className="flex justify-between items-start mb-2">
+                           <div className="font-bold text-yellow-900 text-lg flex items-center gap-2">
+                              <StickyNote size={16} className="text-yellow-700" />
+                              {title}
+                           </div>
+                           {article && (
+                             <button onClick={() => handleArticleClick(article)} className="text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-3 py-1 rounded-full font-medium transition-colors">
+                               View Article
+                             </button>
+                           )}
+                        </div>
+                        <div className="whitespace-pre-wrap text-sm text-gray-700 border-t border-yellow-100 pt-2 mt-2">{text}</div>
+                    </div>
+                  );
+              })}
               {Object.keys(notes).length === 0 && <div className="text-center py-20 text-gray-400">No notes yet.</div>}
           </div>
       </div>
