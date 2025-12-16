@@ -117,9 +117,13 @@ const COLORS = {
 const TEXT_COLORS = { gray: "text-gray-600", slate: "text-slate-600", zinc: "text-zinc-600", neutral: "text-neutral-600" };
 
 const INSPIRATIONAL_VERSES = [
-  { text: "For God so loved the world...", ref: "John 3:16" },
-  { text: "I can do all things through Christ...", ref: "Philippians 4:13" },
-  { text: "The LORD is my shepherd...", ref: "Psalm 23:1" },
+  { text: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.", ref: "John 3:16" },
+  { text: "I can do all things through Christ which strengtheneth me.", ref: "Philippians 4:13" },
+  { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
+  { text: "Trust in the LORD with all thine heart; and lean not unto thine own understanding.", ref: "Proverbs 3:5" },
+  { text: "And we know that all things work together for good to them that love God, to them who are the called according to his purpose.", ref: "Romans 8:28" },
+  { text: "Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.", ref: "Joshua 1:9" },
+  { text: "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles; they shall run, and not be weary; and they shall walk, and not faint.", ref: "Isaiah 40:31" }
 ];
 
 // --- Components ---
@@ -253,6 +257,8 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
 
 const VerseOfTheDayWidget = () => {
   const [verse, setVerse] = useState(INSPIRATIONAL_VERSES[0]);
+  const [animate, setAnimate] = useState(false);
+
   useEffect(() => {
      const today = new Date().toDateString();
      let hash = 0;
@@ -260,14 +266,34 @@ const VerseOfTheDayWidget = () => {
      const index = Math.abs(hash) % INSPIRATIONAL_VERSES.length;
      setVerse(INSPIRATIONAL_VERSES[index]);
   }, []);
+
+  const handleNext = () => {
+    setAnimate(true);
+    setTimeout(() => {
+      let nextIndex;
+      do {
+        nextIndex = Math.floor(Math.random() * INSPIRATIONAL_VERSES.length);
+      } while (INSPIRATIONAL_VERSES[nextIndex] === verse);
+      setVerse(INSPIRATIONAL_VERSES[nextIndex]);
+      setAnimate(false);
+    }, 200);
+  };
+
   return (
     <div className="bg-gradient-to-br from-indigo-900 to-violet-900 rounded-2xl p-8 shadow-lg text-white mb-8">
-       <div className="flex flex-col md:flex-row gap-6 items-center">
-         <div className="flex-1 text-center md:text-left">
+       <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
+         <div className={`flex-1 text-center md:text-left transition-opacity duration-300 ${animate ? 'opacity-0' : 'opacity-100'}`}>
            <div className="flex items-center justify-center md:justify-start gap-2 mb-2 text-indigo-200 text-sm font-medium uppercase tracking-widest"><Sparkles size={14} className="text-yellow-400" /> Verse of the Day</div>
            <p className="text-xl font-serif italic mb-2">"{verse.text}"</p>
            <p className="font-sans font-bold text-yellow-400">{verse.ref} <span className="text-white/40 font-normal text-xs ml-1">KJV</span></p>
          </div>
+         <button 
+             onClick={handleNext}
+             className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-sm font-medium transition-all group border border-white/10 shrink-0"
+         >
+             <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-500" />
+             See Another
+         </button>
        </div>
     </div>
   );
@@ -326,6 +352,7 @@ function App() {
   const [siteFont, setSiteFont] = useState("sans");
   const [siteTextSize, setSiteTextSize] = useState("base");
   const [imageSeed, setImageSeed] = useState(0);
+  const [siteLogo, setSiteLogo] = useState(null);
   
   // Admin & Data
   const [adminTab, setAdminTab] = useState('manage');
@@ -403,12 +430,13 @@ function App() {
             if(d.description) setSiteDescription(d.description);
             if(d.color) setSiteColor(d.color);
             if(d.font) setSiteFont(d.font);
+            if(d.logo) setSiteLogo(d.logo);
         }
     });
 
     const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
     let q = activeCategory 
-        ? query(articlesRef, where('category', '==', activeCategory), limit(limitCount)) // Removed orderBy for category filtering to avoid index error
+        ? query(articlesRef, where('category', '==', activeCategory), limit(limitCount)) 
         : query(articlesRef, orderBy('createdAt', 'desc'), limit(limitCount));
     
     const unsub = onSnapshot(q, (snap) => {
@@ -514,10 +542,20 @@ function App() {
               title: siteTitle,
               description: siteDescription,
               color: siteColor,
-              font: siteFont
+              font: siteFont,
+              logo: siteLogo
           });
           showNotification("Settings Saved!");
       } catch(e) { console.error(e); showNotification("Failed to save settings"); }
+  };
+  
+  const handleLogoUpload = (event) => { 
+    const file = event.target.files[0]; 
+    if (file) { 
+        const reader = new FileReader(); 
+        reader.onload = (e) => setSiteLogo(e.target.result); 
+        reader.readAsDataURL(file); 
+    } 
   };
 
   const handleDelete = async (id) => {
@@ -655,7 +693,7 @@ function App() {
       <div className={`max-w-4xl mx-auto space-y-12 animate-fadeIn ${currentTheme.font} ${currentTheme.textSize}`}>
         <div className="text-center py-12">
             <h1 className="text-4xl font-bold text-gray-900 mb-6">{siteTitle}</h1>
-            <div className="max-w-2xl mx-auto mb-10 px-4">
+            <div className="max-w-2xl mx-auto mb-8 px-4">
               <div className={`relative rounded-2xl ${currentTheme.colors.bgSoft} border ${currentTheme.colors.border} shadow-sm text-center transition-all duration-300 ${isWelcomeMinimized ? 'p-4' : 'p-6'}`}>
                 <button 
                   onClick={() => setIsWelcomeMinimized(!isWelcomeMinimized)}
@@ -691,11 +729,11 @@ function App() {
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {Object.entries(categoryStats).map(([cat, n]) => (
-                    <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-end" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
+                    <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-                        <div className="relative z-10 text-white flex flex-col items-start p-2">
-                            <span className="font-bold text-lg leading-tight mb-1">{cat}</span>
-                            <span className="text-xs font-medium bg-black/40 px-2 py-1 rounded backdrop-blur-sm border border-white/20">{n} Articles</span>
+                        <div className="relative z-10 text-white font-bold text-lg leading-tight p-2">{cat}</div>
+                        <div className="relative z-10 self-end p-2">
+                            <span className="text-xs font-medium text-white bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm border border-white/20">{n} Articles</span>
                         </div>
                     </div>
                 ))}
@@ -812,7 +850,7 @@ function App() {
         <div className="max-w-sm mx-auto mt-20 p-8 bg-white rounded-xl shadow-lg text-center">
             <h2 className="text-xl font-bold mb-4">Admin Login</h2>
             <form onSubmit={handleLogin} className="space-y-4">
-                {loginStep === 'password' ? <input type="password" value={passwordInput} onChange={e=>setPasswordInput(e.target.value)} className="w-full p-2 border rounded" placeholder="Password (admin123)" /> : <input value={mfaInput} onChange={e=>setMfaInput(e.target.value)} className="w-full p-2 border rounded" placeholder="Code (123456)" />}
+                {loginStep === 'password' ? <input type="password" value={passwordInput} onChange={e=>setPasswordInput(e.target.value)} className="w-full p-2 border rounded" placeholder="Password (*)" /> : <input value={mfaInput} onChange={e=>setMfaInput(e.target.value)} className="w-full p-2 border rounded" placeholder="Code (*)" />}
                 {loginError && <p className="text-red-500 text-sm">{loginError}</p>}
                 <button className="w-full py-2 bg-indigo-600 text-white rounded font-bold">Next</button>
             </form>
@@ -867,6 +905,13 @@ function App() {
                             <div><label className="block text-sm font-bold">Site Title</label><input className="w-full p-2 border rounded" value={siteTitle} onChange={e=>setSiteTitle(e.target.value)} /></div>
                             <div><label className="block text-sm font-bold">Description</label><textarea className="w-full p-2 border rounded" value={siteDescription} onChange={e=>setSiteDescription(e.target.value)} /></div>
                             
+                            {/* NEW: Logo Upload */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Site Logo</label>
+                                <input type="file" accept="image/*" onChange={handleLogoUpload} className="w-full p-2 border rounded" />
+                                {siteLogo && <img src={siteLogo} alt="Logo Preview" className="mt-2 h-12 object-contain" />}
+                            </div>
+
                             {/* NEW: Font Selector */}
                             <div>
                                 <label className="block text-sm font-bold mb-2">Font Style</label>
