@@ -54,30 +54,19 @@ const liveFirebaseConfig = {
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { hasError: false, error: null };
   }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, errorInfo) { 
-      console.error("Uncaught error:", error, errorInfo); 
-      this.setState({ errorInfo });
-  }
+  componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); }
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-8 font-sans text-center min-h-screen flex flex-col items-center justify-center bg-red-50">
+        <div className="p-8 font-sans text-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
-          <p className="mb-4 text-gray-700">Here is the error details to share with support:</p>
-          <pre className="bg-white p-6 rounded-lg shadow-md text-left overflow-auto text-xs text-red-800 border border-red-200 w-full max-w-2xl whitespace-pre-wrap">
+          <p className="mb-4">Please verify your Firebase Config keys in <code>src/App.jsx</code></p>
+          <pre className="bg-gray-100 p-4 rounded text-left overflow-auto text-sm text-red-800 border border-red-200">
             {this.state.error && this.state.error.toString()}
-            <br/>
-            {this.state.errorInfo && this.state.errorInfo.componentStack}
           </pre>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="mt-6 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold"
-          >
-            Reload Page
-          </button>
         </div>
       );
     }
@@ -129,12 +118,15 @@ const INSPIRATIONAL_VERSES = [
   { text: "The LORD is my shepherd...", ref: "Psalm 23:1" },
 ];
 
+// --- Helper Functions ---
+const makeId = (t) => t ? t.trim().replace(/\s+/g, '_').replace(/[^\w\-_]/g, '') : '';
+
 // --- Components ---
 const NavItem = ({ icon: Icon, label, active, onClick, theme }) => {
   const textCol = theme.colors.text;
   const bgCol = theme.colors.bgSoft;
   return (
-    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-50 hover:text-gray-900`}`} title={title || label}>
+    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-50 hover:text-gray-900`}`} title={label}>
       <Icon size={18} className={active ? textCol : "text-gray-400"} />
       <span className="hidden md:inline">{label}</span>
     </button>
@@ -143,6 +135,7 @@ const NavItem = ({ icon: Icon, label, active, onClick, theme }) => {
 const Badge = ({ children, theme, onClick }) => (
   <span onClick={(e) => { if (onClick) { e.stopPropagation(); onClick(); } }} className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${theme.colors.bgSoft} ${theme.colors.text} ${onClick ? 'cursor-pointer hover:opacity-80 hover:underline' : ''}`} title={onClick ? "View category" : ""}>{children}</span>
 );
+
 const Skeleton = ({ className }) => <div className={`animate-pulse bg-gray-200 rounded ${className}`}></div>;
 const ArticleSkeleton = () => (
   <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
@@ -294,6 +287,7 @@ function App() {
       return (
           <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
               <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-red-100 text-center">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32}/></div>
                   <h1 className="text-2xl font-bold text-gray-900 mb-2">Configuration Needed</h1>
                   <p className="text-gray-600 mb-6">Update <code>src/App.jsx</code> with your Firebase keys.</p>
               </div>
@@ -423,13 +417,7 @@ function App() {
     return result;
   }, [articles, searchQuery]);
 
-  const getCategoryImage = (cat) => {
-      const catLower = (cat||"").toLowerCase();
-      if (catLower.includes('theology') || catLower.includes('god')) return "https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=800&q=80";
-      if (catLower.includes('bibl')) return "https://images.unsplash.com/photo-1491841550275-ad7854e35ca6?w=800&q=80";
-      if (catLower.includes('history')) return "https://images.unsplash.com/photo-1461360370896-922624d12aa1?w=800&q=80";
-      return "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800&q=80";
-  };
+  const getCategoryImage = () => `https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=800&q=80`;
 
   // --- Helpers ---
   const handleArticleClick = (a) => { setPreviousView(view); setSelectedArticle(a); setView('article'); };
@@ -568,12 +556,9 @@ function App() {
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {Object.entries(categoryStats).map(([cat, n]) => (
-                    <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-end" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-                        <div className="relative z-10 text-white">
-                            <div className="font-bold">{cat}</div>
-                            <div className="text-xs opacity-80">{n} articles</div>
-                        </div>
+                    <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md">
+                        <div className="font-bold text-gray-800">{cat}</div>
+                        <div className="text-xs text-gray-500">{n} articles</div>
                     </div>
                 ))}
             </div>
@@ -617,10 +602,8 @@ function App() {
               <button onClick={handleBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 font-medium bg-gray-100 px-4 py-2 rounded-lg transition-colors hover:bg-gray-200 w-fit"><ArrowLeft size={16}/> Back</button>
               <div className="bg-white p-8 md:p-12 rounded-2xl border shadow-sm">
                   <div className="mb-6 border-b pb-6">
-                      <div className="flex justify-between items-start">
-                         <h1 className="text-4xl font-bold mt-4 mb-2 text-gray-900">{selectedArticle.title}</h1>
-                         <Badge theme={currentTheme} onClick={() => { setActiveCategory(selectedArticle.category); setView('search'); }}>{selectedArticle.category}</Badge>
-                      </div>
+                      <Badge theme={currentTheme} onClick={() => { setActiveCategory(selectedArticle.category); setView('search'); }}>{selectedArticle.category}</Badge>
+                      <h1 className="text-4xl font-bold mt-4 mb-2">{selectedArticle.title}</h1>
                   </div>
                   <div className="prose max-w-none">
                       <HtmlContentRenderer html={selectedArticle.content} theme={currentTheme} onNavigate={handleNavigateByTitle} />
@@ -630,6 +613,21 @@ function App() {
           </div>
       );
   };
+
+  const renderNotesDashboard = () => (
+      <div className="max-w-4xl mx-auto">
+          <h2 className="text-2xl font-bold mb-6">My Notes</h2>
+          <div className="grid gap-4">
+              {Object.entries(notes).map(([id, text]) => (
+                  <div key={id} className="p-4 bg-yellow-50 rounded-xl border border-yellow-200">
+                      <div className="font-bold text-yellow-900 mb-2">Article ID: {id}</div>
+                      <div className="whitespace-pre-wrap text-sm text-gray-700">{text}</div>
+                  </div>
+              ))}
+              {Object.keys(notes).length === 0 && <div className="text-center py-20 text-gray-400">No notes yet.</div>}
+          </div>
+      </div>
+  );
 
   const renderAdmin = () => {
     if(!isAuthenticated) return (
