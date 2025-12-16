@@ -40,7 +40,6 @@ import {
 } from 'firebase/firestore';
 
 // --- CONFIGURATION SECTION ---
-
 // 1. FIREBASE CONFIG
 const liveFirebaseConfig = {
   apiKey: "AIzaSyC45o7fJuF_akzIZ0eBo1UGGx78ZCnCEk4",
@@ -118,17 +117,21 @@ const COLORS = {
 const TEXT_COLORS = { gray: "text-gray-600", slate: "text-slate-600", zinc: "text-zinc-600", neutral: "text-neutral-600" };
 
 const INSPIRATIONAL_VERSES = [
-  { text: "For God so loved the world...", ref: "John 3:16" },
-  { text: "I can do all things through Christ...", ref: "Philippians 4:13" },
-  { text: "The LORD is my shepherd...", ref: "Psalm 23:1" },
+  { text: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.", ref: "John 3:16" },
+  { text: "I can do all things through Christ which strengtheneth me.", ref: "Philippians 4:13" },
+  { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
+  { text: "Trust in the LORD with all thine heart; and lean not unto thine own understanding.", ref: "Proverbs 3:5" },
+  { text: "And we know that all things work together for good to them that love God, to them who are the called according to his purpose.", ref: "Romans 8:28" },
+  { text: "Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.", ref: "Joshua 1:9" },
+  { text: "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles; they shall run, and not be weary; and they shall walk, and not faint.", ref: "Isaiah 40:31" }
 ];
 
 // --- Components ---
-const NavItem = ({ icon: Icon, label, active, onClick, theme, title, colorClass, bgClass }) => {
+const NavItem = ({ icon: Icon, label, active, onClick, theme }) => {
   const textCol = theme.colors.text;
   const bgCol = theme.colors.bgSoft;
   return (
-    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-50 hover:text-gray-900`}`} title={title || label}>
+    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-50 hover:text-gray-900`}`} title={label}>
       <Icon size={18} className={active ? textCol : "text-gray-400"} />
       <span className="hidden md:inline">{label}</span>
     </button>
@@ -202,7 +205,6 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
   const isVerseString = (str) => /^(\b(?:(?:1|2|3|I|II)\s*)?(?:[A-Za-z]+(?:\s+of\s+[A-Za-z]+)?(?:\s+[A-Za-z]+)?)(?:\.|(?:\s+))\s*\d+:\d+(?:[-–,]\s*\d+)*)$/.test(str);
 
   const renderNodes = (nodes) => Array.from(nodes).map((node, i) => {
-      // Text Node
       if (node.nodeType === 3) {
         const text = node.textContent;
         if(!text.trim()) return null;
@@ -216,15 +218,11 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
           </React.Fragment>
         );
       }
-      
-      // Element Node
       if (node.nodeType === 1) {
         const tagName = node.tagName.toLowerCase();
         if (['script','style'].includes(tagName)) return null;
         const props = { key: i };
         if (node.attributes) Array.from(node.attributes).forEach(attr => { if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; });
-
-        // Styling
         let baseClass = props.className || '';
         if (tagName === 'p') baseClass += ' mb-4 leading-relaxed text-gray-700';
         if (tagName === 'h1') baseClass += ' text-3xl font-bold mt-8 mb-4 text-gray-900';
@@ -235,8 +233,6 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
         if (tagName === 'li') baseClass += ' mb-1';
         if (tagName === 'blockquote') baseClass += ' border-l-4 border-indigo-200 pl-4 py-2 my-4 italic text-gray-600 bg-gray-50';
         props.className = baseClass;
-        
-        // Link Handlers
         if (props['data-wiki-link'] && onNavigate) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); onNavigate(props['data-wiki-link']); };
           props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold`;
@@ -252,17 +248,27 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
   try { return <>{renderNodes(new DOMParser().parseFromString(html || "", 'text/html').body.childNodes)}</>; } catch { return null; }
 };
 
-const VerseOfTheDayWidget = () => (
+const VerseOfTheDayWidget = () => {
+  const [verse, setVerse] = useState(INSPIRATIONAL_VERSES[0]);
+  useEffect(() => {
+     const today = new Date().toDateString();
+     let hash = 0;
+     for (let i = 0; i < today.length; i++) hash = today.charCodeAt(i) + ((hash << 5) - hash);
+     const index = Math.abs(hash) % INSPIRATIONAL_VERSES.length;
+     setVerse(INSPIRATIONAL_VERSES[index]);
+  }, []);
+  return (
     <div className="bg-gradient-to-br from-indigo-900 to-violet-900 rounded-2xl p-8 shadow-lg text-white mb-8">
        <div className="flex flex-col md:flex-row gap-6 items-center">
          <div className="flex-1 text-center md:text-left">
            <div className="flex items-center justify-center md:justify-start gap-2 mb-2 text-indigo-200 text-sm font-medium uppercase tracking-widest"><Sparkles size={14} className="text-yellow-400" /> Verse of the Day</div>
-           <p className="text-xl font-serif italic mb-2">"For God so loved the world..."</p>
-           <p className="font-sans font-bold text-yellow-400">John 3:16</p>
+           <p className="text-xl font-serif italic mb-2">"{verse.text}"</p>
+           <p className="font-sans font-bold text-yellow-400">{verse.ref} <span className="text-white/40 font-normal text-xs ml-1">KJV</span></p>
          </div>
        </div>
     </div>
-);
+  );
+};
 
 const FloatingNotesWidget = ({ article, noteContent, onChange, onExport, onShare, visible, setVisible, theme }) => {
   const [isMinimized, setIsMinimized] = useState(false);
@@ -289,7 +295,6 @@ function App() {
       return (
           <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
               <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-red-100 text-center">
-                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32}/></div>
                   <h1 className="text-2xl font-bold text-gray-900 mb-2">Configuration Needed</h1>
                   <p className="text-gray-600 mb-6">Update <code>src/App.jsx</code> with your Firebase keys.</p>
               </div>
@@ -385,13 +390,29 @@ function App() {
   useEffect(() => {
     if (!user || !db) return;
     setIsLoading(true);
+    
+    // Fetch Settings
+    getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings')).then(snap => {
+        if(snap.exists()) {
+            const d = snap.data();
+            if(d.title) setSiteTitle(d.title);
+            if(d.description) setSiteDescription(d.description);
+            if(d.color) setSiteColor(d.color);
+            if(d.font) setSiteFont(d.font);
+        }
+    });
+
     const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
     let q = activeCategory 
-        ? query(articlesRef, where('category', '==', activeCategory), orderBy('createdAt', 'desc'), limit(limitCount))
+        ? query(articlesRef, where('category', '==', activeCategory), limit(limitCount)) // Removed orderBy for category filtering to avoid index error
         : query(articlesRef, orderBy('createdAt', 'desc'), limit(limitCount));
     
     const unsub = onSnapshot(q, (snap) => {
-        setArticles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const fetched = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if(activeCategory) { // Manual sort if DB index isn't ready
+             fetched.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+        }
+        setArticles(fetched);
         setIsLoading(false);
     }, (e) => { console.warn("Access denied (check rules):", e.code); setIsLoading(false); });
 
@@ -480,6 +501,18 @@ function App() {
       else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), { ...articleData, createdAt: serverTimestamp() }); showNotification("Published!"); }
       setEditingId(null); setEditorTitle(""); setEditorContent(""); setAdminTab('manage');
     } catch (e) { showNotification("Save failed"); }
+  };
+
+  const handleSaveSettings = async () => {
+      try {
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings'), {
+              title: siteTitle,
+              description: siteDescription,
+              color: siteColor,
+              font: siteFont
+          });
+          showNotification("Settings Saved!");
+      } catch(e) { console.error(e); showNotification("Failed to save settings"); }
   };
 
   const handleDelete = async (id) => {
@@ -655,9 +688,9 @@ function App() {
                 {Object.entries(categoryStats).map(([cat, n]) => (
                     <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-end" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-                        <div className="relative z-10 text-white flex flex-col items-start">
-                            <span className="font-bold text-lg">{cat}</span>
-                            <span className="text-xs opacity-90 bg-black/30 px-2 py-1 rounded">{n} Articles</span>
+                        <div className="relative z-10 text-white flex flex-col items-start p-2">
+                            <span className="font-bold text-lg leading-tight mb-1">{cat}</span>
+                            <span className="text-xs font-medium bg-black/40 px-2 py-1 rounded backdrop-blur-sm border border-white/20">{n} Articles</span>
                         </div>
                     </div>
                 ))}
@@ -849,12 +882,10 @@ function App() {
                                 </div>
                             </div>
 
-                            <div className="pt-4 border-t">
-                                <label className="block text-sm font-bold mb-2">Actions</label>
-                                <div className="flex gap-2">
-                                    <button onClick={() => setImageSeed(s => s + 1)} className="px-4 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300">Refresh Images</button>
-                                    <button onClick={rebuildStats} className="px-4 py-2 bg-amber-600 text-white rounded text-sm hover:bg-amber-700">Rebuild Category Stats</button>
-                                </div>
+                            <div className="pt-4 border-t flex gap-2">
+                                <button onClick={handleSaveSettings} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700">Save Settings</button>
+                                <button onClick={() => setImageSeed(s => s + 1)} className="px-4 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300">Refresh Images</button>
+                                <button onClick={rebuildStats} className="px-4 py-2 bg-amber-600 text-white rounded text-sm hover:bg-amber-700">Rebuild Category Stats</button>
                             </div>
                         </div>
                     </div>
