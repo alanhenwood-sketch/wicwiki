@@ -117,17 +117,13 @@ const COLORS = {
 const TEXT_COLORS = { gray: "text-gray-600", slate: "text-slate-600", zinc: "text-zinc-600", neutral: "text-neutral-600" };
 
 const INSPIRATIONAL_VERSES = [
-  { text: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.", ref: "John 3:16" },
-  { text: "I can do all things through Christ which strengtheneth me.", ref: "Philippians 4:13" },
-  { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
-  { text: "Trust in the LORD with all thine heart; and lean not unto thine own understanding.", ref: "Proverbs 3:5" },
-  { text: "And we know that all things work together for good to them that love God, to them who are the called according to his purpose.", ref: "Romans 8:28" },
-  { text: "Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.", ref: "Joshua 1:9" },
-  { text: "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles; they shall run, and not be weary; and they shall walk, and not faint.", ref: "Isaiah 40:31" }
+  { text: "For God so loved the world...", ref: "John 3:16" },
+  { text: "I can do all things through Christ...", ref: "Philippians 4:13" },
+  { text: "The LORD is my shepherd...", ref: "Psalm 23:1" },
 ];
 
 // --- Components ---
-const NavItem = ({ icon: Icon, label, active, onClick, theme }) => {
+const NavItem = ({ icon: Icon, label, active, onClick, theme, title, colorClass, bgClass }) => {
   const textCol = theme.colors.text;
   const bgCol = theme.colors.bgSoft;
   return (
@@ -205,6 +201,7 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
   const isVerseString = (str) => /^(\b(?:(?:1|2|3|I|II)\s*)?(?:[A-Za-z]+(?:\s+of\s+[A-Za-z]+)?(?:\s+[A-Za-z]+)?)(?:\.|(?:\s+))\s*\d+:\d+(?:[-–,]\s*\d+)*)$/.test(str);
 
   const renderNodes = (nodes) => Array.from(nodes).map((node, i) => {
+      // Text Node
       if (node.nodeType === 3) {
         const text = node.textContent;
         if(!text.trim()) return null;
@@ -218,11 +215,15 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
           </React.Fragment>
         );
       }
+      
+      // Element Node
       if (node.nodeType === 1) {
         const tagName = node.tagName.toLowerCase();
         if (['script','style'].includes(tagName)) return null;
         const props = { key: i };
         if (node.attributes) Array.from(node.attributes).forEach(attr => { if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; });
+
+        // Styling
         let baseClass = props.className || '';
         if (tagName === 'p') baseClass += ' mb-4 leading-relaxed text-gray-700';
         if (tagName === 'h1') baseClass += ' text-3xl font-bold mt-8 mb-4 text-gray-900';
@@ -233,6 +234,8 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
         if (tagName === 'li') baseClass += ' mb-1';
         if (tagName === 'blockquote') baseClass += ' border-l-4 border-indigo-200 pl-4 py-2 my-4 italic text-gray-600 bg-gray-50';
         props.className = baseClass;
+        
+        // Link Handlers
         if (props['data-wiki-link'] && onNavigate) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); onNavigate(props['data-wiki-link']); };
           props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold`;
@@ -295,6 +298,7 @@ function App() {
       return (
           <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
               <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-red-100 text-center">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32}/></div>
                   <h1 className="text-2xl font-bold text-gray-900 mb-2">Configuration Needed</h1>
                   <p className="text-gray-600 mb-6">Update <code>src/App.jsx</code> with your Firebase keys.</p>
               </div>
@@ -392,7 +396,7 @@ function App() {
     setIsLoading(true);
     
     // Fetch Settings
-    getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings')).then(snap => {
+    getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global')).then(snap => {
         if(snap.exists()) {
             const d = snap.data();
             if(d.title) setSiteTitle(d.title);
@@ -505,7 +509,8 @@ function App() {
 
   const handleSaveSettings = async () => {
       try {
-          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings'), {
+          // Use 'global' as document ID to fix even number of segments error
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
               title: siteTitle,
               description: siteDescription,
               color: siteColor,
