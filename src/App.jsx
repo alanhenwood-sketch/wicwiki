@@ -32,10 +32,6 @@ import {
   getDocs, 
   getDoc, 
   serverTimestamp,
-  query,
-  limit,
-  orderBy,
-  where,
   writeBatch
 } from 'firebase/firestore';
 
@@ -434,18 +430,31 @@ function App() {
     });
 
     const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
-    let q = activeCategory 
-        ? query(articlesRef, where('category', '==', activeCategory), limit(limitCount)) 
-        : query(articlesRef, orderBy('createdAt', 'desc'), limit(limitCount));
     
-    const unsub = onSnapshot(q, (snap) => {
-        const fetched = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        if(activeCategory) { // Manual sort if DB index isn't ready
-             fetched.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+    // Fix: Remove query() with orderBy/limit which causes permissions/index errors
+    const unsub = onSnapshot(articlesRef, (snap) => {
+        let fetched = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        // Manual Sort & Filter in JS to strictly comply with Rule 2
+        if(activeCategory) {
+            fetched = fetched.filter(a => a.category === activeCategory);
         }
+        
+        fetched.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+        
+        if (limitCount) {
+             fetched = fetched.slice(0, limitCount);
+        }
+
         setArticles(fetched);
         setIsLoading(false);
-    }, (e) => { console.warn("Access denied (check rules):", e.code); setIsLoading(false); });
+    }, (e) => { 
+        console.warn("Firestore error (handled):", e.code); 
+        setIsLoading(false); 
+        if (e.code !== 'permission-denied') {
+             // Optional: Display soft error
+        }
+    });
 
     const unsubSections = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sections'), 
         (s) => setCustomSections(s.docs.map(d => ({ id: d.id, ...d.data() }))), 
@@ -506,9 +515,12 @@ function App() {
       if (local) { handleArticleClick(local); return; }
       if (!db) return;
       try {
-          const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), where('title', '==', title), limit(1));
-          const snap = await getDocs(q);
-          if(!snap.empty) handleArticleClick({ id: snap.docs[0].id, ...snap.docs[0].data() });
+          const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
+          // Manual scan since we can't use where() reliably
+          const snap = await getDocs(articlesRef);
+          const found = snap.docs.find(d => d.data().title === title);
+          
+          if(found) handleArticleClick({ id: found.id, ...found.data() });
           else showNotification("Article not found: " + title);
       } catch(e) { console.error(e); }
   };
@@ -564,26 +576,100 @@ function App() {
     }
   };
 
+  // --- MISSING HANDLERS ADDED HERE ---
+
+  const handleAddSection = async () => {
+      if(!sectionContent) return;
+      try {
+          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sections'), {
+              content: sectionContent,
+              isPersistent: sectionPersistent,
+              expirationDate: sectionPersistent ? null : sectionExpiry,
+              createdAt: serverTimestamp()
+          });
+          setSectionContent("");
+          setSectionPersistent(false);
+          setSectionExpiry("");
+          showNotification("Section added!");
+      } catch(e) {
+          console.error(e);
+          showNotification("Failed to add section");
+      }
+  };
+
+  const handleDeleteSection = async (id) => {
+      if(!confirm("Delete this section?")) return;
+      try {
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sections', id));
+          showNotification("Section deleted");
+      } catch(e) {
+          showNotification("Failed to delete");
+      }
+  };
+
+  const handleNoteChange = (id, text) => {
+      setNotes(prev => ({ ...prev, [id]: text }));
+  };
+
+  const handleShareNote = (id) => {
+      if(notes[id]) {
+          navigator.clipboard.writeText(notes[id]);
+          showNotification("Note copied to clipboard!");
+      } else {
+          showNotification("No note to share.");
+      }
+  };
+
+  const exportNotes = (all = false, id = null) => {
+      const content = all 
+        ? Object.entries(notes).map(([k,v]) => `Article ${k}:\n${v}`).join('\n\n')
+        : (notes[id] || "");
+      
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'notes.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+  };
+
+  // ------------------------------------
+
   const handleDeleteAll = async () => {
     if(!confirm("DANGER: This will delete ALL articles. This cannot be undone. Are you sure?")) return;
     if(!confirm("Are you REALLY sure?")) return;
     
     setImportStatus("Deleting all articles...");
     try {
-        const batchSize = 100;
-        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), limit(batchSize));
-        
         const deleteBatch = async () => {
-            const snapshot = await getDocs(q);
+            const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
+            const snapshot = await getDocs(articlesRef); // No query limit for delete
+            
             if (snapshot.size === 0) {
                 setImportStatus(null);
                 showNotification("All articles deleted.");
                 return;
             }
+            
+            // Delete in chunks of 500 max
             const batch = writeBatch(db);
-            snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+            let count = 0;
+            snapshot.docs.forEach((doc) => {
+                if (count < 400) { // Safety margin
+                    batch.delete(doc.ref);
+                    count++;
+                }
+            });
             await batch.commit();
-            deleteBatch(); // Recurse
+            
+            // Recurse if there were more
+            if (snapshot.size > 400) {
+               deleteBatch();
+            } else {
+               setImportStatus(null);
+               showNotification("All articles deleted.");
+            }
         };
         await deleteBatch();
         // Reset stats
@@ -709,8 +795,8 @@ function App() {
      if(!db) return;
      setImportStatus("Rebuilding stats...");
      try {
-         const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'));
-         const snap = await getDocs(q);
+         const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
+         const snap = await getDocs(articlesRef); // Scan all
          const counts = {};
          snap.forEach(d => { const c = d.data().category || "Uncategorized"; counts[c] = (counts[c]||0)+1; });
          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories'), counts);
