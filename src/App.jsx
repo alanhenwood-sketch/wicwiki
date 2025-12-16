@@ -40,7 +40,8 @@ import {
 } from 'firebase/firestore';
 
 // --- CONFIGURATION SECTION ---
-// TODO: Replace this object with the one from your Firebase Console
+
+// 1. FIREBASE CONFIG
 const liveFirebaseConfig = {
   apiKey: "AIzaSyC45o7fJuF_akzIZ0eBo1UGGx78ZCnCEk4",
   authDomain: "wicwiki-24d11.firebaseapp.com",
@@ -49,6 +50,9 @@ const liveFirebaseConfig = {
   messagingSenderId: "817508613146",
   appId: "1:817508613146:web:b3e2afa79e539ac75265a3"
 };
+
+// 2. GEMINI AI CONFIG
+const GEMINI_API_KEY = "AIzaSyBkDJkm618_QadoblgpgLFtWxAApNjVywg"; 
 
 // --- ERROR BOUNDARY ---
 class ErrorBoundary extends React.Component {
@@ -63,7 +67,7 @@ class ErrorBoundary extends React.Component {
       return (
         <div className="p-8 font-sans text-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
-          <p className="mb-4">Please verify your Firebase Config keys in <code>src/App.jsx</code></p>
+          <p className="mb-4">Please verify your Config keys in <code>src/App.jsx</code></p>
           <pre className="bg-gray-100 p-4 rounded text-left overflow-auto text-sm text-red-800 border border-red-200">
             {this.state.error && this.state.error.toString()}
           </pre>
@@ -82,6 +86,7 @@ try {
   const envConfig = (typeof window !== 'undefined' && window.__firebase_config) 
     ? JSON.parse(window.__firebase_config) 
     : null;
+    
   const configToUse = envConfig || liveFirebaseConfig;
 
   if (configToUse.apiKey === "PASTE_YOUR_API_KEY_HERE") {
@@ -119,11 +124,11 @@ const INSPIRATIONAL_VERSES = [
 ];
 
 // --- Components ---
-const NavItem = ({ icon: Icon, label, active, onClick, theme }) => {
+const NavItem = ({ icon: Icon, label, active, onClick, theme, title, colorClass, bgClass }) => {
   const textCol = theme.colors.text;
   const bgCol = theme.colors.bgSoft;
   return (
-    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-50 hover:text-gray-900`}`} title={label}>
+    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-50 hover:text-gray-900`}`} title={title || label}>
       <Icon size={18} className={active ? textCol : "text-gray-400"} />
       <span className="hidden md:inline">{label}</span>
     </button>
@@ -429,7 +434,13 @@ function App() {
     return result;
   }, [articles, searchQuery]);
 
-  const getCategoryImage = () => `https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=800&q=80`;
+  const getCategoryImage = (cat) => {
+      const catLower = (cat||"").toLowerCase();
+      if (catLower.includes('theology') || catLower.includes('god')) return "https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=800&q=80";
+      if (catLower.includes('bibl')) return "https://images.unsplash.com/photo-1491841550275-ad7854e35ca6?w=800&q=80";
+      if (catLower.includes('history')) return "https://images.unsplash.com/photo-1461360370896-922624d12aa1?w=800&q=80";
+      return "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800&q=80";
+  };
 
   // --- Helpers ---
   const handleArticleClick = (a) => { setPreviousView(view); setSelectedArticle(a); setView('article'); };
@@ -476,6 +487,50 @@ function App() {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'articles', id));
         showNotification("Deleted");
     }
+  };
+
+  const callGemini = async (promptType, customPrompt = "") => {
+    if (!selectedArticle) return;
+    setIsAiLoading(true); setAiResponse(""); setAiPanelOpen(true);
+    
+    // Use the API Key from the top of the file
+    const apiKey = GEMINI_API_KEY; 
+
+    // Guard: If they haven't replaced the placeholder, stop.
+    if (apiKey === "PASTE_YOUR_GEMINI_API_KEY_HERE" || !apiKey) {
+      setAiResponse("Please set your Gemini API Key in the src/App.jsx configuration section.");
+      setIsAiLoading(false);
+      return;
+    }
+
+    const cleanContent = selectedArticle.content.replace(/<[^>]+>/g, ''); 
+    let userQuery = ""; 
+    switch (promptType) { 
+        case 'summary': userQuery = `Summarize this theological article in 3-5 concise bullet points. The article is titled "${selectedArticle.title}":\n\n${cleanContent}`; break; 
+        case 'devotional': userQuery = `Write a short, encouraging daily devotional and prayer based on the themes found in this article titled "${selectedArticle.title}". Content:\n\n${cleanContent}`; break; 
+        case 'chat': userQuery = `Context: You are a helpful theological assistant answering questions about the article "${selectedArticle.title}". Article Content: ${cleanContent}\n\nUser Question: ${customPrompt}`; break; 
+        default: userQuery = customPrompt; 
+    } 
+    const payload = { contents: [{ parts: [{ text: userQuery }] }] }; 
+    let attempt = 0; 
+    const fetchWithRetry = async () => { 
+        try { 
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); 
+            if (!response.ok) throw new Error(response.statusText); 
+            const data = await response.json(); 
+            setAiResponse(data.candidates?.[0]?.content?.parts?.[0]?.text); 
+        } catch (error) { 
+            if (attempt < 2) { 
+                await new Promise(r => setTimeout(r, 1000)); 
+                attempt++;
+                await fetchWithRetry(); 
+            } else { 
+                setAiResponse("Sorry, I couldn't reach the AI service at this time."); 
+            } 
+        } 
+    }; 
+    await fetchWithRetry(); 
+    setIsAiLoading(false); 
   };
 
   // --- Import Logic ---
@@ -600,9 +655,9 @@ function App() {
                 {Object.entries(categoryStats).map(([cat, n]) => (
                     <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-end" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-                        <div className="relative z-10 text-white">
-                            <div className="font-bold">{cat}</div>
-                            <div className="text-xs opacity-80">{n} articles</div>
+                        <div className="relative z-10 text-white flex flex-col items-start">
+                            <span className="font-bold text-lg">{cat}</span>
+                            <span className="text-xs opacity-90 bg-black/30 px-2 py-1 rounded">{n} Articles</span>
                         </div>
                     </div>
                 ))}
@@ -773,7 +828,34 @@ function App() {
                         <div className="space-y-4">
                             <div><label className="block text-sm font-bold">Site Title</label><input className="w-full p-2 border rounded" value={siteTitle} onChange={e=>setSiteTitle(e.target.value)} /></div>
                             <div><label className="block text-sm font-bold">Description</label><textarea className="w-full p-2 border rounded" value={siteDescription} onChange={e=>setSiteDescription(e.target.value)} /></div>
-                            <button onClick={rebuildStats} className="px-4 py-2 bg-amber-600 text-white rounded">Rebuild Stats</button>
+                            
+                            {/* NEW: Font Selector */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Font Style</label>
+                                <div className="flex gap-2">
+                                    {['sans', 'serif', 'mono'].map(f => (
+                                        <button key={f} onClick={() => setSiteFont(f)} className={`px-3 py-1 border rounded capitalize ${siteFont === f ? 'bg-indigo-100 border-indigo-500' : ''}`}>{f}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            {/* NEW: Color Selector */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Theme Color</label>
+                                <div className="flex gap-2 flex-wrap">
+                                    {Object.keys(COLORS).map(c => (
+                                        <button key={c} onClick={() => setSiteColor(c)} className={`px-3 py-1 border rounded capitalize ${siteColor === c ? 'bg-gray-200 border-gray-500' : ''}`}>{c}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t">
+                                <label className="block text-sm font-bold mb-2">Actions</label>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setImageSeed(s => s + 1)} className="px-4 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300">Refresh Images</button>
+                                    <button onClick={rebuildStats} className="px-4 py-2 bg-amber-600 text-white rounded text-sm hover:bg-amber-700">Rebuild Category Stats</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}
