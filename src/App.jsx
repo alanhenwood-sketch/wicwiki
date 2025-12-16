@@ -85,7 +85,6 @@ try {
   const envConfig = (typeof window !== 'undefined' && window.__firebase_config) 
     ? JSON.parse(window.__firebase_config) 
     : null;
-    
   const configToUse = envConfig || liveFirebaseConfig;
 
   if (configToUse.apiKey === "PASTE_YOUR_API_KEY_HERE") {
@@ -117,13 +116,9 @@ const COLORS = {
 const TEXT_COLORS = { gray: "text-gray-600", slate: "text-slate-600", zinc: "text-zinc-600", neutral: "text-neutral-600" };
 
 const INSPIRATIONAL_VERSES = [
-  { text: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.", ref: "John 3:16" },
-  { text: "I can do all things through Christ which strengtheneth me.", ref: "Philippians 4:13" },
-  { text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" },
-  { text: "Trust in the LORD with all thine heart; and lean not unto thine own understanding.", ref: "Proverbs 3:5" },
-  { text: "And we know that all things work together for good to them that love God, to them who are the called according to his purpose.", ref: "Romans 8:28" },
-  { text: "Be strong and of a good courage; be not afraid, neither be thou dismayed: for the LORD thy God is with thee whithersoever thou goest.", ref: "Joshua 1:9" },
-  { text: "But they that wait upon the LORD shall renew their strength; they shall mount up with wings as eagles; they shall run, and not be weary; and they shall walk, and not faint.", ref: "Isaiah 40:31" }
+  { text: "For God so loved the world...", ref: "John 3:16" },
+  { text: "I can do all things through Christ...", ref: "Philippians 4:13" },
+  { text: "The LORD is my shepherd...", ref: "Psalm 23:1" },
 ];
 
 // --- Components ---
@@ -227,22 +222,26 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
         const props = { key: i };
         if (node.attributes) Array.from(node.attributes).forEach(attr => { if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; });
 
-        // Styling
+        // Formatting Classes
         let baseClass = props.className || '';
-        if (tagName === 'p') baseClass += ' mb-4 leading-relaxed text-gray-700';
-        if (tagName === 'h1') baseClass += ' text-3xl font-bold mt-8 mb-4 text-gray-900';
-        if (tagName === 'h2') baseClass += ' text-2xl font-bold mt-6 mb-3 text-gray-900 border-b pb-2 border-gray-200';
-        if (tagName === 'h3') baseClass += ' text-xl font-bold mt-5 mb-2 text-gray-800';
-        if (tagName === 'ul') baseClass += ' list-disc list-inside mb-4 ml-4 text-gray-700';
-        if (tagName === 'ol') baseClass += ' list-decimal list-inside mb-4 ml-4 text-gray-700';
-        if (tagName === 'li') baseClass += ' mb-1';
-        if (tagName === 'blockquote') baseClass += ' border-l-4 border-indigo-200 pl-4 py-2 my-4 italic text-gray-600 bg-gray-50';
+        // Add strong typography classes here
+        if (tagName === 'p') baseClass += ' mb-6 leading-relaxed text-gray-800 text-base md:text-lg';
+        if (tagName === 'h1') baseClass += ' text-3xl font-extrabold mt-10 mb-6 text-gray-900 border-b pb-4';
+        if (tagName === 'h2') baseClass += ' text-2xl font-bold mt-8 mb-4 text-gray-800 border-b pb-2 border-gray-100';
+        if (tagName === 'h3') baseClass += ' text-xl font-bold mt-6 mb-3 text-gray-800';
+        if (tagName === 'ul') baseClass += ' list-disc list-outside mb-6 ml-6 text-gray-700 space-y-2';
+        if (tagName === 'ol') baseClass += ' list-decimal list-outside mb-6 ml-6 text-gray-700 space-y-2';
+        if (tagName === 'li') baseClass += ' pl-1';
+        if (tagName === 'blockquote') baseClass += ' border-l-4 border-indigo-300 pl-6 py-3 my-6 italic text-gray-700 bg-gray-50 rounded-r-lg';
+        if (tagName === 'b' || tagName === 'strong') baseClass += ' font-bold text-gray-900';
+        if (tagName === 'i' || tagName === 'em') baseClass += ' italic';
+        
         props.className = baseClass;
         
         // Link Handlers
         if (props['data-wiki-link'] && onNavigate) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); onNavigate(props['data-wiki-link']); };
-          props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold`;
+          props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold bg-indigo-50 px-1 rounded`;
         }
         if (props['data-wiki-anchor']) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); const el = document.getElementById(props['data-wiki-anchor']); if(el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
@@ -565,6 +564,37 @@ function App() {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if(!confirm("DANGER: This will delete ALL articles. This cannot be undone. Are you sure?")) return;
+    if(!confirm("Are you REALLY sure?")) return;
+    
+    setImportStatus("Deleting all articles...");
+    try {
+        const batchSize = 100;
+        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), limit(batchSize));
+        
+        const deleteBatch = async () => {
+            const snapshot = await getDocs(q);
+            if (snapshot.size === 0) {
+                setImportStatus(null);
+                showNotification("All articles deleted.");
+                return;
+            }
+            const batch = writeBatch(db);
+            snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+            await batch.commit();
+            deleteBatch(); // Recurse
+        };
+        await deleteBatch();
+        // Reset stats
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories'), {});
+        setDbCategoryCounts({});
+    } catch(e) {
+        console.error(e);
+        showNotification("Deletion failed.");
+    }
+  };
+
   const callGemini = async (promptType, customPrompt = "") => {
     if (!selectedArticle) return;
     setIsAiLoading(true); setAiResponse(""); setAiPanelOpen(true);
@@ -692,7 +722,9 @@ function App() {
   const renderHome = () => (
       <div className={`max-w-4xl mx-auto space-y-12 animate-fadeIn ${currentTheme.font} ${currentTheme.textSize}`}>
         <div className="text-center py-12">
-            <h1 className="text-4xl font-bold text-gray-900 mb-6">{siteTitle}</h1>
+            <h1 className="text-4xl font-bold text-gray-900 mb-6 flex items-center justify-center gap-4">
+               {siteLogo ? <img src={siteLogo} alt={siteTitle} className="h-16 object-contain" /> : siteTitle}
+            </h1>
             <div className="max-w-2xl mx-auto mb-8 px-4">
               <div className={`relative rounded-2xl ${currentTheme.colors.bgSoft} border ${currentTheme.colors.border} shadow-sm text-center transition-all duration-300 ${isWelcomeMinimized ? 'p-4' : 'p-6'}`}>
                 <button 
@@ -731,9 +763,9 @@ function App() {
                 {Object.entries(categoryStats).map(([cat, n]) => (
                     <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-                        <div className="relative z-10 text-white font-bold text-lg leading-tight p-2">{cat}</div>
+                        <div className="relative z-10 text-white font-bold text-lg leading-tight p-2 drop-shadow-md">{cat}</div>
                         <div className="relative z-10 self-end p-2">
-                            <span className="text-xs font-medium text-white bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm border border-white/20">{n} Articles</span>
+                            <span className="text-xs font-medium text-white bg-black/60 px-2 py-1 rounded-full backdrop-blur-md border border-white/20 shadow-sm">{n} Articles</span>
                         </div>
                     </div>
                 ))}
@@ -862,6 +894,7 @@ function App() {
                 <NavItem icon={PenTool} label="Manage" active={adminTab==='manage'} onClick={()=>setAdminTab('manage')} theme={currentTheme} />
                 <NavItem icon={Plus} label="New Article" active={adminTab==='create'} onClick={()=>setAdminTab('create')} theme={currentTheme} />
                 <NavItem icon={Upload} label="Import XML" active={adminTab==='import'} onClick={()=>setAdminTab('import')} theme={currentTheme} />
+                <NavItem icon={Megaphone} label="Home Sections" active={adminTab === 'sections'} onClick={() => setAdminTab('sections')} theme={currentTheme} />
                 <NavItem icon={Settings} label="Settings" active={adminTab==='settings'} onClick={()=>setAdminTab('settings')} theme={currentTheme} />
                 <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg text-red-600 hover:bg-red-50 w-full"><LogOut size={18}/> Logout</button>
             </div>
@@ -896,6 +929,25 @@ function App() {
                                 <button onClick={()=>{if(pagesRef.current){abortImportRef.current=false; setImportState('active'); executeImportLoop(pagesRef.current);}}} className="px-4 py-2 bg-green-100 rounded">Resume</button>
                             </div>
                         </div>}
+                    </div>
+                )}
+                {adminTab === 'sections' && (
+                    <div>
+                        <h2 className="text-xl font-bold mb-4">Manage Home Sections</h2>
+                        <RichTextEditor content={sectionContent} onChange={setSectionContent} theme={currentTheme} />
+                        <div className="mt-4 flex gap-4">
+                            <label><input type="checkbox" checked={sectionPersistent} onChange={e=>setSectionPersistent(e.target.checked)}/> Persistent</label>
+                            {!sectionPersistent && <input type="date" value={sectionExpiry} onChange={e=>setSectionExpiry(e.target.value)} />}
+                        </div>
+                        <button onClick={handleAddSection} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded">Add Section</button>
+                        <div className="mt-8 space-y-2">
+                           {customSections.map(s => (
+                               <div key={s.id} className="p-3 border rounded flex justify-between">
+                                  <div className="text-sm truncate w-64">{s.content.substring(0, 50)}...</div>
+                                  <button onClick={() => handleDeleteSection(s.id)} className="text-red-500"><Trash2 size={14}/></button>
+                               </div>
+                           ))}
+                        </div>
                     </div>
                 )}
                 {adminTab === 'settings' && (
@@ -942,7 +994,10 @@ function App() {
                 )}
                 {adminTab === 'manage' && (
                     <div>
-                        <h2 className="text-xl font-bold mb-4">Manage Articles</h2>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold">Manage Articles</h2>
+                            <button onClick={handleDeleteAll} className="px-3 py-1 bg-red-100 text-red-600 rounded text-sm hover:bg-red-200 font-bold border border-red-200">Delete All Articles</button>
+                        </div>
                         <input className="w-full p-2 border rounded mb-4" placeholder="Filter articles..." value={adminSearchQuery} onChange={e=>setAdminSearchQuery(e.target.value)} />
                         <div className="space-y-2">
                             {articles.filter(a=>a.title.toLowerCase().includes(adminSearchQuery.toLowerCase())).map(a=>(
@@ -967,7 +1022,9 @@ function App() {
       {notification && <div className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded shadow-lg z-50">{notification.message}</div>}
       <header className="sticky top-0 bg-white border-b z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-           <div className="flex items-center gap-2 font-bold text-xl cursor-pointer" onClick={()=>setView('home')}><Book/> {siteTitle}</div>
+           <div className="flex items-center gap-2 font-bold text-xl cursor-pointer" onClick={()=>setView('home')}>
+             {siteLogo ? <img src={siteLogo} alt={siteTitle} className="h-10 object-contain" /> : <><Book/> {siteTitle}</>}
+           </div>
            <nav className="flex gap-4">
                <NavItem icon={Layout} label="Home" active={view==='home'} onClick={()=>setView('home')} theme={currentTheme} />
                <NavItem icon={Search} label="Search" active={view==='search'} onClick={()=>setView('search')} theme={currentTheme} />
