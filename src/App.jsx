@@ -41,7 +41,6 @@ import {
 
 // --- CONFIGURATION SECTION ---
 // TODO: Replace this object with the one from your Firebase Console
-// If you haven't done this yet, the app will show a setup screen.
 const liveFirebaseConfig = {
   apiKey: "AIzaSyC45o7fJuF_akzIZ0eBo1UGGx78ZCnCEk4",
   authDomain: "wicwiki-24d11.firebaseapp.com",
@@ -64,10 +63,7 @@ class ErrorBoundary extends React.Component {
       return (
         <div className="p-8 font-sans text-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
-          <p className="mb-4">Please verify your Firebase Config keys in <code>src/App.jsx</code></p>
-          <pre className="bg-gray-100 p-4 rounded text-left overflow-auto text-sm text-red-800 border border-red-200">
-            {this.state.error && this.state.error.toString()}
-          </pre>
+          <p className="mb-4">Please check the console for details.</p>
         </div>
       );
     }
@@ -80,14 +76,11 @@ let app, auth, db;
 let initError = null;
 
 try {
-  // Determine config source safely using window check to avoid ReferenceErrors
   const envConfig = (typeof window !== 'undefined' && window.__firebase_config) 
     ? JSON.parse(window.__firebase_config) 
     : null;
-    
   const configToUse = envConfig || liveFirebaseConfig;
 
-  // Check if keys are placeholder values
   if (configToUse.apiKey === "PASTE_YOUR_API_KEY_HERE") {
     initError = "CONFIGURATION_NEEDED";
   } else {
@@ -100,7 +93,6 @@ try {
   initError = e.message;
 }
 
-// App ID Management
 const rawAppId = (typeof window !== 'undefined' && window.__app_id) ? window.__app_id : 'production-v1';
 const appId = rawAppId.replace(/[\/\\#\?]/g, '_'); 
 
@@ -124,7 +116,7 @@ const INSPIRATIONAL_VERSES = [
 ];
 
 // --- Components ---
-const NavItem = ({ icon: Icon, label, active, onClick, theme, title, colorClass, bgClass }) => {
+const NavItem = ({ icon: Icon, label, active, onClick, theme }) => {
   const textCol = theme.colors.text;
   const bgCol = theme.colors.bgSoft;
   return (
@@ -137,7 +129,6 @@ const NavItem = ({ icon: Icon, label, active, onClick, theme, title, colorClass,
 const Badge = ({ children, theme, onClick }) => (
   <span onClick={(e) => { if (onClick) { e.stopPropagation(); onClick(); } }} className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${theme.colors.bgSoft} ${theme.colors.text} ${onClick ? 'cursor-pointer hover:opacity-80 hover:underline' : ''}`} title={onClick ? "View category" : ""}>{children}</span>
 );
-
 const Skeleton = ({ className }) => <div className={`animate-pulse bg-gray-200 rounded ${className}`}></div>;
 const ArticleSkeleton = () => (
   <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
@@ -167,28 +158,93 @@ const RichTextEditor = ({ content, onChange, theme }) => {
   );
 };
 
-// --- HTML Renderer ---
+// --- Verse Tooltip Component (Restored) ---
+const VerseTooltip = ({ reference, theme }) => {
+  const [text, setText] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const handleMouseEnter = async () => {
+    if (text || loading || error) return;
+    setLoading(true);
+    try {
+      const cleanRef = reference.replace(/\.$/, '').replace(/\s+/g, ' ');
+      const res = await fetch(`https://bible-api.com/${encodeURIComponent(cleanRef)}?translation=kjv`);
+      const data = await res.json();
+      if (data && data.text) setText(data.text); else setError(true);
+    } catch (e) { setError(true); } finally { setLoading(false); }
+  };
+
+  return (
+    <span className={`relative group cursor-help font-bold border-b-2 border-dotted inline-block ${theme.colors.text} border-indigo-200`} onMouseEnter={handleMouseEnter}>
+      {reference}
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-4 bg-slate-900 text-white text-sm rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] text-left leading-normal">
+        {loading && "Loading..."}
+        {error && "Verse unavailable."}
+        {text && <i>"{text.trim()}"</i>}
+      </span>
+    </span>
+  );
+};
+
+// --- HTML Renderer (Enhanced for Formatting & Verses) ---
 const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
+  const verseRegex = /(\b(?:(?:1|2|3|I|II)\s*)?(?:[A-Za-z]+(?:\s+of\s+[A-Za-z]+)?(?:\s+[A-Za-z]+)?)(?:\.|(?:\s+))\s*\d+:\d+(?:[-–,]\s*\d+)*)/g;
+  const isVerseString = (str) => /^(\b(?:(?:1|2|3|I|II)\s*)?(?:[A-Za-z]+(?:\s+of\s+[A-Za-z]+)?(?:\s+[A-Za-z]+)?)(?:\.|(?:\s+))\s*\d+:\d+(?:[-–,]\s*\d+)*)$/.test(str);
+
   const renderNodes = (nodes) => Array.from(nodes).map((node, i) => {
-      if (node.nodeType === 3) return <span key={i}>{node.textContent}</span>;
+      // Text Node: Parse for Verses
+      if (node.nodeType === 3) {
+        const text = node.textContent;
+        if(!text.trim()) return null;
+        const parts = text.split(verseRegex);
+        return (
+          <React.Fragment key={i}>
+            {parts.map((part, index) => {
+               if (isVerseString(part)) return <VerseTooltip key={index} reference={part} theme={theme} />;
+               return <span key={index}>{part}</span>;
+            })}
+          </React.Fragment>
+        );
+      }
+      
+      // Element Node: Apply Classes & Handlers
       if (node.nodeType === 1) {
         const tagName = node.tagName.toLowerCase();
         if (['script','style'].includes(tagName)) return null;
         const props = { key: i };
-        if (node.attributes) Array.from(node.attributes).forEach(attr => { if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; });
         
+        // --- 1. Attributes ---
+        if (node.attributes) Array.from(node.attributes).forEach(attr => { if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; });
+
+        // --- 2. Default Styling (Fix "No Formatting" Issue) ---
+        // This ensures content looks good even if Tailwind Typography plugin is missing
+        let baseClass = props.className || '';
+        if (tagName === 'p') baseClass += ' mb-4 leading-relaxed text-gray-700';
+        if (tagName === 'h1') baseClass += ' text-3xl font-bold mt-8 mb-4 text-gray-900';
+        if (tagName === 'h2') baseClass += ' text-2xl font-bold mt-6 mb-3 text-gray-900 border-b pb-2 border-gray-200';
+        if (tagName === 'h3') baseClass += ' text-xl font-bold mt-5 mb-2 text-gray-800';
+        if (tagName === 'ul') baseClass += ' list-disc list-inside mb-4 ml-4 text-gray-700';
+        if (tagName === 'ol') baseClass += ' list-decimal list-inside mb-4 ml-4 text-gray-700';
+        if (tagName === 'li') baseClass += ' mb-1';
+        if (tagName === 'blockquote') baseClass += ' border-l-4 border-indigo-200 pl-4 py-2 my-4 italic text-gray-600 bg-gray-50';
+        props.className = baseClass;
+
+        // --- 3. Link Handlers ---
         if (props['data-wiki-link'] && onNavigate) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); onNavigate(props['data-wiki-link']); };
-          props.className = (props.className || '') + ` cursor-pointer ${theme.colors.text} hover:underline font-bold`;
+          props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold`;
         }
         if (props['data-wiki-anchor']) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); const el = document.getElementById(props['data-wiki-anchor']); if(el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-          props.className = (props.className || '') + ` cursor-pointer ${theme.colors.text} hover:underline font-medium`;
+          props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-medium`;
         }
+
         return React.createElement(tagName, props, node.childNodes.length > 0 ? renderNodes(node.childNodes) : null);
       }
       return null;
   });
+  
   try { return <>{renderNodes(new DOMParser().parseFromString(html || "", 'text/html').body.childNodes)}</>; } catch { return null; }
 };
 
@@ -222,6 +278,7 @@ function App() {
   // --- State ---
   const [user, setUser] = useState(null);
   const [view, setView] = useState('home');
+  const [previousView, setPreviousView] = useState('home'); // Tracks where we came from
   const [articles, setArticles] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState(null);
@@ -249,6 +306,24 @@ function App() {
   const importCursorRef = useRef(0);
   const abortImportRef = useRef(false);
   const [importState, setImportState] = useState('idle');
+
+  // Notes UI
+  const [showNoteWidget, setShowNoteWidget] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState('ai');
+  const [aiResponse, setAiResponse] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [pendingScrollAnchor, setPendingScrollAnchor] = useState(null);
+  const [isWelcomeMinimized, setIsWelcomeMinimized] = useState(false);
+  const [notification, setNotification] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editorTitle, setEditorTitle] = useState("");
+  const [editorCategory, setEditorCategory] = useState("");
+  const [editorContent, setEditorContent] = useState("");
+  const [sectionContent, setSectionContent] = useState("");
+  const [sectionPersistent, setSectionPersistent] = useState(false);
+  const [sectionExpiry, setSectionExpiry] = useState("");
 
   // Computed
   const currentTheme = useMemo(() => ({
@@ -321,8 +396,19 @@ function App() {
   const getCategoryImage = () => `https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=800&q=80`;
 
   // --- Helpers ---
-  const handleArticleClick = (a) => { setSelectedArticle(a); setView('article'); };
+  // Smart Navigation Handler
+  const handleArticleClick = (a) => { 
+      setPreviousView(view); // Save where we came from
+      setSelectedArticle(a); 
+      setView('article'); 
+  };
+  
+  const handleBack = () => {
+      setView(previousView); // Go back to where we were
+  };
+
   const handleLogout = () => { setIsAuthenticated(false); setView('home'); };
+  const showNotification = (msg) => { setNotification({message: msg}); setTimeout(()=>setNotification(null), 3000); };
   
   const handleNavigateByTitle = async (target) => {
       const title = target.split('#')[0];
@@ -333,7 +419,7 @@ function App() {
           const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), where('title', '==', title), limit(1));
           const snap = await getDocs(q);
           if(!snap.empty) handleArticleClick({ id: snap.docs[0].id, ...snap.docs[0].data() });
-          else alert("Article not found: " + title);
+          else showNotification("Article not found: " + title);
       } catch(e) { console.error(e); }
   };
 
@@ -383,10 +469,8 @@ function App() {
               const rev = p.getElementsByTagName("revision")[0];
               const text = rev ? rev.getElementsByTagName("text")[0]?.textContent : "";
               if(title && text) {
-                  // Clean MediaWiki
                   let clean = text.replace(/<!--[\s\S]*?-->/g, "").replace(/\{\|[\s\S]*?\|\}/g, "").replace(/\[\[(File|Image):[^\]]*\]\]/gi, "");
                   clean = clean.replace(/={2,}\s*(.*?)\s*={2,}/g, (m,t) => `<h2 class="text-xl font-bold mt-4">${t}</h2>`);
-                  // Internal Links: [[Target|Label]] -> data-wiki-link="Target"
                   clean = clean.replace(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/g, (m,t,l) => `<span data-wiki-link="${t.trim()}" class="text-indigo-600 font-medium hover:underline cursor-pointer">${l||t}</span>`);
                   
                   const catMatch = text.match(/\[\[Category:([^\]|]+)/i);
@@ -405,18 +489,14 @@ function App() {
                   i += 10;
                   importCursorRef.current = i;
                   setImportStatus(`Importing... ${i} / ${total}`);
-                  await new Promise(r => setTimeout(r, 1000)); // Rate limit protection
+                  await new Promise(r => setTimeout(r, 1000)); 
               } catch(e) {
-                  console.error("Batch error", e);
-                  if(e.code === 'resource-exhausted') await new Promise(r => setTimeout(r, 10000)); // Backoff
-                  else i += 10; // Skip bad batch
+                  if(e.code === 'resource-exhausted') await new Promise(r => setTimeout(r, 10000));
+                  else i += 10;
               }
-          } else {
-              i += 10;
-          }
+          } else { i += 10; }
       }
 
-      // Update stats
       try {
           const sRef = doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories');
           const snap = await getDoc(sRef);
@@ -442,6 +522,35 @@ function App() {
      } catch(e) { setImportStatus("Rebuild failed"); }
   };
 
+  const handleAddSection = async () => {
+    if (!sectionContent.trim()) return;
+    try {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sections'), { content: sectionContent, isPersistent: sectionPersistent, expirationDate: sectionPersistent ? null : sectionExpiry, createdAt: serverTimestamp() });
+        setSectionContent("");
+        showNotification("Section added");
+    } catch(e) { console.error(e); }
+  };
+
+  const handleDeleteSection = async (id) => {
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sections', id)); showNotification("Section removed"); } catch(e) { console.error(e); }
+  };
+
+  const handleSaveArticle = async () => {
+    const articleData = { title: editorTitle, category: editorCategory || "Uncategorized", content: editorContent, lastUpdated: new Date().toISOString().split('T')[0] };
+    try {
+      if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'articles', editingId), articleData); showNotification("Updated!"); } 
+      else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), { ...articleData, createdAt: serverTimestamp() }); showNotification("Published!"); }
+      setEditingId(null); setEditorTitle(""); setEditorContent(""); setAdminTab('manage');
+    } catch (e) { showNotification("Save failed"); }
+  };
+
+  const handleDelete = async (id) => {
+    if(confirm("Delete this article?")) {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'articles', id));
+        showNotification("Deleted");
+    }
+  };
+
   // --- Render Sections ---
   const renderHome = () => (
       <div className={`max-w-4xl mx-auto space-y-12 animate-fadeIn ${currentTheme.font} ${currentTheme.textSize}`}>
@@ -459,7 +568,7 @@ function App() {
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {Object.entries(categoryStats).map(([cat, n]) => (
-                    <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search');}} className="p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md">
+                    <div key={cat} onClick={()=>{setActiveCategory(cat); setView('search'); setLimitCount(50);}} className="p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md">
                         <div className="font-bold text-gray-800">{cat}</div>
                         <div className="text-xs text-gray-500">{n} articles</div>
                     </div>
@@ -484,7 +593,7 @@ function App() {
     <div className={`max-w-5xl mx-auto ${currentTheme.font}`}>
         <div className="mb-6 flex items-center gap-4">
             <input className="flex-1 p-3 border rounded-lg" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Filter results..." />
-            {activeCategory && <button onClick={() => setActiveCategory(null)} className="px-3 py-1 bg-gray-100 rounded-lg text-sm flex items-center gap-1">Category: {activeCategory} <X size={14}/></button>}
+            {activeCategory && <button onClick={() => {setActiveCategory(null); setLimitCount(50);}} className="px-3 py-1 bg-gray-100 rounded-lg text-sm flex items-center gap-1">Category: {activeCategory} <X size={14}/></button>}
         </div>
         <div className="grid gap-4">
             {filteredArticles.map(a => (
@@ -502,16 +611,19 @@ function App() {
       if(!selectedArticle) return null;
       return (
           <div className={`max-w-5xl mx-auto ${currentTheme.font}`}>
-              <button onClick={()=>setView('search')} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6"><ArrowLeft size={16}/> Back</button>
+              <button onClick={handleBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 font-medium bg-gray-100 px-4 py-2 rounded-lg transition-colors hover:bg-gray-200 w-fit"><ArrowLeft size={16}/> Back</button>
               <div className="bg-white p-8 md:p-12 rounded-2xl border shadow-sm">
                   <div className="mb-6 border-b pb-6">
-                      <Badge theme={currentTheme} onClick={() => { setActiveCategory(selectedArticle.category); setView('search'); }}>{selectedArticle.category}</Badge>
-                      <h1 className="text-4xl font-bold mt-4 mb-2">{selectedArticle.title}</h1>
+                      <div className="flex justify-between items-start">
+                         <h1 className="text-4xl font-bold mt-4 mb-2 text-gray-900">{selectedArticle.title}</h1>
+                         <Badge theme={currentTheme} onClick={() => { setActiveCategory(selectedArticle.category); setView('search'); }}>{selectedArticle.category}</Badge>
+                      </div>
                   </div>
                   <div className="prose max-w-none">
                       <HtmlContentRenderer html={selectedArticle.content} theme={currentTheme} onNavigate={handleNavigateByTitle} />
                   </div>
               </div>
+              <FloatingNotesWidget article={selectedArticle} noteContent={notes[selectedArticle.id] || ''} onChange={(id, txt) => setNotes({...notes, [id]: txt})} onExport={() => {}} onShare={() => {}} visible={showNoteWidget} setVisible={setShowNoteWidget} theme={currentTheme} />
           </div>
       );
   };
@@ -546,11 +658,21 @@ function App() {
         <div className="max-w-6xl mx-auto flex gap-8">
             <div className="w-64 space-y-2">
                 <NavItem icon={PenTool} label="Manage" active={adminTab==='manage'} onClick={()=>setAdminTab('manage')} theme={currentTheme} />
+                <NavItem icon={Plus} label="New Article" active={adminTab==='create'} onClick={()=>setAdminTab('create')} theme={currentTheme} />
                 <NavItem icon={Upload} label="Import XML" active={adminTab==='import'} onClick={()=>setAdminTab('import')} theme={currentTheme} />
                 <NavItem icon={Settings} label="Settings" active={adminTab==='settings'} onClick={()=>setAdminTab('settings')} theme={currentTheme} />
                 <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg text-red-600 hover:bg-red-50 w-full"><LogOut size={18}/> Logout</button>
             </div>
             <div className="flex-1 bg-white p-8 rounded-xl border">
+                {adminTab === 'create' && (
+                    <div>
+                        <h2 className="text-xl font-bold mb-4">Create New Article</h2>
+                        <input className="w-full mb-4 p-2 border rounded" placeholder="Title" value={editorTitle} onChange={e=>setEditorTitle(e.target.value)} />
+                        <input className="w-full mb-4 p-2 border rounded" placeholder="Category" value={editorCategory} onChange={e=>setEditorCategory(e.target.value)} />
+                        <RichTextEditor content={editorContent} onChange={setEditorContent} theme={currentTheme} />
+                        <button onClick={handleSaveArticle} className="mt-4 px-4 py-2 bg-green-600 text-white rounded">Save</button>
+                    </div>
+                )}
                 {adminTab === 'import' && (
                     <div>
                         <h2 className="text-xl font-bold mb-4">Import XML</h2>
@@ -565,8 +687,33 @@ function App() {
                         </div>}
                     </div>
                 )}
-                {adminTab === 'settings' && <button onClick={rebuildStats} className="px-4 py-2 bg-amber-600 text-white rounded">Rebuild Stats</button>}
-                {adminTab === 'manage' && <div>Manage Content...</div>}
+                {adminTab === 'settings' && (
+                    <div>
+                        <h2 className="text-xl font-bold mb-4">Settings</h2>
+                        <div className="space-y-4">
+                            <div><label className="block text-sm font-bold">Site Title</label><input className="w-full p-2 border rounded" value={siteTitle} onChange={e=>setSiteTitle(e.target.value)} /></div>
+                            <div><label className="block text-sm font-bold">Description</label><textarea className="w-full p-2 border rounded" value={siteDescription} onChange={e=>setSiteDescription(e.target.value)} /></div>
+                            <button onClick={rebuildStats} className="px-4 py-2 bg-amber-600 text-white rounded">Rebuild Stats</button>
+                        </div>
+                    </div>
+                )}
+                {adminTab === 'manage' && (
+                    <div>
+                        <h2 className="text-xl font-bold mb-4">Manage Articles</h2>
+                        <input className="w-full p-2 border rounded mb-4" placeholder="Filter articles..." value={adminSearchQuery} onChange={e=>setAdminSearchQuery(e.target.value)} />
+                        <div className="space-y-2">
+                            {articles.filter(a=>a.title.toLowerCase().includes(adminSearchQuery.toLowerCase())).map(a=>(
+                                <div key={a.id} className="flex justify-between p-2 border rounded">
+                                    <span>{a.title}</span>
+                                    <div className="flex gap-2">
+                                        <button onClick={()=>{setEditingId(a.id); setEditorTitle(a.title); setEditorCategory(a.category); setEditorContent(a.content); setAdminTab('create');}} className="text-blue-600"><Edit size={16}/></button>
+                                        <button onClick={()=>handleDelete(a.id)} className="text-red-600"><Trash2 size={16}/></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -574,6 +721,7 @@ function App() {
 
   return (
     <div className={`min-h-screen bg-gray-50 ${currentTheme.font}`}>
+      {notification && <div className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded shadow-lg z-50">{notification.message}</div>}
       <header className="sticky top-0 bg-white border-b z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
            <div className="flex items-center gap-2 font-bold text-xl cursor-pointer" onClick={()=>setView('home')}><Book/> {siteTitle}</div>
