@@ -111,10 +111,12 @@ const COLORS = {
 };
 const TEXT_COLORS = { gray: "text-gray-600", slate: "text-slate-600", zinc: "text-zinc-600", neutral: "text-neutral-600" };
 
-const INSPIRATIONAL_VERSES = [
-  { text: "For God so loved the world...", ref: "John 3:16" },
-  { text: "I can do all things through Christ...", ref: "Philippians 4:13" },
-  { text: "The LORD is my shepherd...", ref: "Psalm 23:1" },
+// Extended list for dynamic selection
+const POPULAR_VERSE_REFS = [
+  "John 3:16", "Philippians 4:13", "Psalm 23:1", "Romans 8:28", "Jeremiah 29:11",
+  "Proverbs 3:5-6", "Isaiah 40:31", "Joshua 1:9", "Romans 12:2", "Galatians 5:22-23",
+  "Hebrews 11:1", "2 Timothy 1:7", "1 Corinthians 13:4-7", "Matthew 28:19-20", "Psalm 46:10",
+  "John 14:6", "Matthew 11:28", "Psalm 119:105", "Ephesians 2:8-9", "Romans 3:23"
 ];
 
 // --- Components ---
@@ -251,43 +253,48 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
 };
 
 const VerseOfTheDayWidget = () => {
-  const [verse, setVerse] = useState(INSPIRATIONAL_VERSES[0]);
+  const [verseData, setVerseData] = useState({ text: "Loading verse...", ref: "" });
   const [animate, setAnimate] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const fetchRandomVerse = async () => {
+      setLoading(true);
+      setAnimate(true);
+      try {
+          const randomRef = POPULAR_VERSE_REFS[Math.floor(Math.random() * POPULAR_VERSE_REFS.length)];
+          const res = await fetch(`https://bible-api.com/${encodeURIComponent(randomRef)}?translation=kjv`);
+          const data = await res.json();
+          setTimeout(() => {
+              setVerseData({ text: data.text.trim(), ref: data.reference });
+              setAnimate(false);
+              setLoading(false);
+          }, 300);
+      } catch (e) {
+          setVerseData({ text: "The LORD is my shepherd; I shall not want.", ref: "Psalm 23:1" });
+          setAnimate(false);
+          setLoading(false);
+      }
+  };
 
   useEffect(() => {
-     const today = new Date().toDateString();
-     let hash = 0;
-     for (let i = 0; i < today.length; i++) hash = today.charCodeAt(i) + ((hash << 5) - hash);
-     const index = Math.abs(hash) % INSPIRATIONAL_VERSES.length;
-     setVerse(INSPIRATIONAL_VERSES[index]);
+     fetchRandomVerse();
   }, []);
-
-  const handleNext = () => {
-    setAnimate(true);
-    setTimeout(() => {
-      let nextIndex;
-      do {
-        nextIndex = Math.floor(Math.random() * INSPIRATIONAL_VERSES.length);
-      } while (INSPIRATIONAL_VERSES[nextIndex] === verse);
-      setVerse(INSPIRATIONAL_VERSES[nextIndex]);
-      setAnimate(false);
-    }, 200);
-  };
 
   return (
     <div className="bg-gradient-to-br from-indigo-900 to-violet-900 rounded-2xl p-8 shadow-lg text-white mb-8">
        <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
          <div className={`flex-1 text-center md:text-left transition-opacity duration-300 ${animate ? 'opacity-0' : 'opacity-100'}`}>
            <div className="flex items-center justify-center md:justify-start gap-2 mb-2 text-indigo-200 text-sm font-medium uppercase tracking-widest"><Sparkles size={14} className="text-yellow-400" /> Verse of the Day</div>
-           <p className="text-xl font-serif italic mb-2">"{verse.text}"</p>
-           <p className="font-sans font-bold text-yellow-400">{verse.ref} <span className="text-white/40 font-normal text-xs ml-1">KJV</span></p>
+           {loading ? <div className="h-6 w-3/4 bg-white/20 animate-pulse rounded mx-auto md:mx-0"></div> : <p className="text-xl font-serif italic mb-2">"{verseData.text}"</p>}
+           {!loading && <p className="font-sans font-bold text-yellow-400">{verseData.ref} <span className="text-white/40 font-normal text-xs ml-1">KJV</span></p>}
          </div>
          <button 
-             onClick={handleNext}
+             onClick={fetchRandomVerse}
+             disabled={loading}
              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-sm font-medium transition-all group border border-white/10 shrink-0"
          >
-             <RefreshCw size={14} className="group-hover:rotate-180 transition-transform duration-500" />
-             See Another
+             <RefreshCw size={14} className={`transition-transform duration-500 ${loading ? 'animate-spin' : 'group-hover:rotate-180'}`} />
+             New Verse
          </button>
        </div>
     </div>
@@ -355,6 +362,7 @@ function App() {
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState("");
   const [importStatus, setImportStatus] = useState(null);
+  const [importProgress, setImportProgress] = useState(0); // NEW State for Progress
   const [adminSearchQuery, setAdminSearchQuery] = useState("");
   const [customSections, setCustomSections] = useState([]);
   const [dbCategoryCounts, setDbCategoryCounts] = useState({});
@@ -417,7 +425,6 @@ function App() {
     if (!user || !db) return;
     setIsLoading(true);
     
-    // Fetch Settings
     getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global')).then(snap => {
         if(snap.exists()) {
             const d = snap.data();
@@ -431,29 +438,17 @@ function App() {
 
     const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
     
-    // Fix: Remove query() with orderBy/limit which causes permissions/index errors
+    // REFACTOR: Fetch all data, do NOT filter by category in Firestore effect to avoid re-subscription loop.
+    // Client-side filtering is fast enough for <5000 docs and safer for this env.
     const unsub = onSnapshot(articlesRef, (snap) => {
         let fetched = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        
-        // Manual Sort & Filter in JS to strictly comply with Rule 2
-        if(activeCategory) {
-            fetched = fetched.filter(a => a.category === activeCategory);
-        }
-        
+        // Sort by date descending
         fetched.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
-        
-        if (limitCount) {
-             fetched = fetched.slice(0, limitCount);
-        }
-
         setArticles(fetched);
         setIsLoading(false);
     }, (e) => { 
         console.warn("Firestore error (handled):", e.code); 
         setIsLoading(false); 
-        if (e.code !== 'permission-denied') {
-             // Optional: Display soft error
-        }
     });
 
     const unsubSections = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sections'), 
@@ -465,7 +460,7 @@ function App() {
         (e) => console.warn("Stats error:", e.code));
 
     return () => { unsub(); unsubSections(); unsubStats(); };
-  }, [user, limitCount, activeCategory]);
+  }, [user]); // Removed activeCategory and limitCount from dependency array to prevent re-fetching
 
   useEffect(() => { if (typeof window !== 'undefined') localStorage.setItem('theologue_notes', JSON.stringify(notes)); }, [notes]);
 
@@ -486,21 +481,41 @@ function App() {
      return Array.from(new Set(articles.map(a => a.category))).sort();
   }, [articles, dbCategoryCounts]);
 
+  // NEW: Filter Logic for both Search AND Category
   const filteredArticles = useMemo(() => {
     let result = articles;
+    if (activeCategory) {
+        result = result.filter(a => a.category === activeCategory);
+    }
     if (searchQuery) {
         const lower = searchQuery.toLowerCase();
         result = result.filter(a => a.title.toLowerCase().includes(lower) || a.content.toLowerCase().includes(lower));
     }
     return result;
-  }, [articles, searchQuery]);
+  }, [articles, searchQuery, activeCategory]);
 
+  // NEW: Robust Image Generation based on Category Hash
   const getCategoryImage = (cat) => {
-      const catLower = (cat||"").toLowerCase();
-      if (catLower.includes('theology') || catLower.includes('god')) return "https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=800&q=80";
-      if (catLower.includes('bibl')) return "https://images.unsplash.com/photo-1491841550275-ad7854e35ca6?w=800&q=80";
-      if (catLower.includes('history')) return "https://images.unsplash.com/photo-1461360370896-922624d12aa1?w=800&q=80";
-      return "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800&q=80";
+      if(!cat) return "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)";
+      
+      // Generate simple hash
+      let hash = 0;
+      for (let i = 0; i < cat.length; i++) hash = cat.charCodeAt(i) + ((hash << 5) - hash);
+      
+      // Use hash to pick a gradient style
+      const styles = [
+        "linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%)", // Blue
+        "linear-gradient(135deg, #10b981 0%, #064e3b 100%)", // Emerald
+        "linear-gradient(135deg, #f59e0b 0%, #78350f 100%)", // Amber
+        "linear-gradient(135deg, #8b5cf6 0%, #4c1d95 100%)", // Violet
+        "linear-gradient(135deg, #ec4899 0%, #831843 100%)", // Pink
+        "linear-gradient(135deg, #6366f1 0%, #312e81 100%)", // Indigo
+        "linear-gradient(to right, #243949 0%, #517fa4 100%)", // Steel
+        "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)", // Deep Purple
+      ];
+      
+      const styleIndex = Math.abs(hash) % styles.length;
+      return styles[styleIndex];
   };
 
   // --- Helpers ---
@@ -516,10 +531,8 @@ function App() {
       if (!db) return;
       try {
           const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
-          // Manual scan since we can't use where() reliably
           const snap = await getDocs(articlesRef);
           const found = snap.docs.find(d => d.data().title === title);
-          
           if(found) handleArticleClick({ id: found.id, ...found.data() });
           else showNotification("Article not found: " + title);
       } catch(e) { console.error(e); }
@@ -548,7 +561,6 @@ function App() {
 
   const handleSaveSettings = async () => {
       try {
-          // Use 'global' as document ID to fix even number of segments error
           await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
               title: siteTitle,
               description: siteDescription,
@@ -578,7 +590,6 @@ function App() {
 
   const handleAddSection = async () => {
       if(!sectionContent) return;
-      // FIX: Ensure a fallback date or strict persistence if no date selected
       if (!sectionPersistent && !sectionExpiry) {
         showNotification("Please select an expiry date or make it persistent.");
         return;
@@ -625,14 +636,14 @@ function App() {
 
   const exportNotes = (all = false, id = null) => {
       const content = all 
-        ? Object.entries(notes).map(([k,v]) => `Article ${k}:\n${v}`).join('\n\n')
+        ? Object.entries(notes).map(([k,v]) => `Article ID: ${k}\n${v}\n-------------------`).join('\n\n')
         : (notes[id] || "");
       
       const blob = new Blob([content], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'notes.txt';
+      a.download = all ? 'all_notes.txt' : `note_${id}.txt`;
       a.click();
       URL.revokeObjectURL(url);
   };
@@ -645,35 +656,28 @@ function App() {
     try {
         const deleteBatch = async () => {
             const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
-            const snapshot = await getDocs(articlesRef); // No query limit for delete
-            
+            const snapshot = await getDocs(articlesRef); 
             if (snapshot.size === 0) {
                 setImportStatus(null);
                 showNotification("All articles deleted.");
                 return;
             }
-            
-            // Delete in chunks of 500 max
             const batch = writeBatch(db);
             let count = 0;
             snapshot.docs.forEach((doc) => {
-                if (count < 400) { // Safety margin
+                if (count < 400) { 
                     batch.delete(doc.ref);
                     count++;
                 }
             });
             await batch.commit();
-            
-            // Recurse if there were more
-            if (snapshot.size > 400) {
-               deleteBatch();
-            } else {
+            if (snapshot.size > 400) deleteBatch();
+            else {
                setImportStatus(null);
                showNotification("All articles deleted.");
             }
         };
         await deleteBatch();
-        // Reset stats
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories'), {});
         setDbCategoryCounts({});
     } catch(e) {
@@ -685,11 +689,7 @@ function App() {
   const callGemini = async (promptType, customPrompt = "") => {
     if (!selectedArticle) return;
     setIsAiLoading(true); setAiResponse(""); setAiPanelOpen(true);
-    
-    // Use the API Key from the top of the file
     const apiKey = GEMINI_API_KEY; 
-
-    // Guard: If they haven't replaced the placeholder, stop.
     if (apiKey === "PASTE_YOUR_GEMINI_API_KEY_HERE" || !apiKey) {
       setAiResponse("Please set your Gemini API Key in the src/App.jsx configuration section.");
       setIsAiLoading(false);
@@ -752,7 +752,8 @@ function App() {
       const limit = 100000;
       let batchCounts = {};
       
-      setImportStatus(`Importing ${i}/${total}...`);
+      setImportStatus(`Importing ${i} / ${total}`);
+      setImportProgress(0); // Reset progress
       
       while(i < Math.min(total, limit)) {
           if(abortImportRef.current) { setImportState('paused'); importCursorRef.current = i; return; }
@@ -778,7 +779,15 @@ function App() {
               }
           });
           if(ops > 0) {
-              try { await batch.commit(); i += 10; importCursorRef.current = i; setImportStatus(`Importing... ${i} / ${total}`); await new Promise(r => setTimeout(r, 1000)); } catch(e) { if(e.code === 'resource-exhausted') await new Promise(r => setTimeout(r, 10000)); else i += 10; }
+              try { 
+                  await batch.commit(); 
+                  i += 10; 
+                  importCursorRef.current = i; 
+                  setImportStatus(`Importing... ${i} / ${total}`);
+                  // Update Progress Bar
+                  setImportProgress(Math.min(100, Math.round((i / total) * 100)));
+                  await new Promise(r => setTimeout(r, 200)); // Slight delay to let UI breathe
+              } catch(e) { if(e.code === 'resource-exhausted') await new Promise(r => setTimeout(r, 10000)); else i += 10; }
           } else { i += 10; }
       }
       try {
@@ -790,6 +799,7 @@ function App() {
       } catch(e) { console.error("Stats error", e); }
       setImportState('completed');
       setImportStatus("Import Complete!");
+      setImportProgress(100);
   };
   
   const rebuildStats = async () => {
@@ -797,7 +807,7 @@ function App() {
      setImportStatus("Rebuilding stats...");
      try {
          const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
-         const snap = await getDocs(articlesRef); // Scan all
+         const snap = await getDocs(articlesRef); 
          const counts = {};
          snap.forEach(d => { const c = d.data().category || "Uncategorized"; counts[c] = (counts[c]||0)+1; });
          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories'), counts);
@@ -837,7 +847,6 @@ function App() {
                 )}
               </div>
             </div>
-            {/* FIX 1: Clear searchQuery when searching from home */}
             <form onSubmit={e => {e.preventDefault(); setView('search');}} className="relative max-w-lg mx-auto">
                 <input className="w-full pl-12 pr-4 py-4 rounded-xl border shadow-sm" placeholder="Search library..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"/>
@@ -849,12 +858,12 @@ function App() {
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {Object.entries(categoryStats).map(([cat, n]) => (
-                    // FIX 1: Added setSearchQuery("")
-                    <div key={cat} onClick={()=>{setActiveCategory(cat); setSearchQuery(""); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ backgroundImage: `url(${getCategoryImage(cat)})`, backgroundSize: 'cover' }}>
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
-                        <div className="relative z-10 text-white font-bold text-lg leading-tight p-2 drop-shadow-md">{cat}</div>
+                    <div key={cat} onClick={()=>{setActiveCategory(cat); setSearchQuery(""); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ background: getCategoryImage(cat), backgroundSize: 'cover' }}>
+                        {/* Removed image overlay logic in favor of pure CSS gradients for consistency */}
+                        <div className="absolute inset-0 bg-black/10 hover:bg-black/0 transition-colors"></div>
+                        <div className="relative z-10 text-white font-bold text-lg leading-tight p-2 drop-shadow-md break-words">{cat}</div>
                         <div className="relative z-10 self-end p-2">
-                            <span className="text-xs font-medium text-white bg-black/60 px-2 py-1 rounded-full backdrop-blur-md border border-white/20 shadow-sm">{n} Articles</span>
+                            <span className="text-xs font-medium text-white bg-black/40 px-2 py-1 rounded-full backdrop-blur-md border border-white/20 shadow-sm">{n} Articles</span>
                         </div>
                     </div>
                 ))}
@@ -881,14 +890,15 @@ function App() {
             {activeCategory && <button onClick={() => {setActiveCategory(null); setLimitCount(50);}} className="px-3 py-1 bg-gray-100 rounded-lg text-sm flex items-center gap-1">Category: {activeCategory} <X size={14}/></button>}
         </div>
         <div className="grid gap-4">
-            {filteredArticles.map(a => (
+            {filteredArticles.slice(0, limitCount).map(a => (
                 <div key={a.id} onClick={() => handleArticleClick(a)} className="p-6 bg-white rounded-xl border border-gray-200 hover:shadow-md cursor-pointer">
                     <h3 className="text-xl font-bold text-gray-900 mb-1">{a.title}</h3>
                     <Badge theme={currentTheme}>{a.category}</Badge>
                 </div>
             ))}
+            {filteredArticles.length === 0 && <div className="text-center py-10 text-gray-400">No articles found matching your criteria.</div>}
         </div>
-        {articles.length >= limitCount && <button onClick={() => setLimitCount(l => l + 50)} className="w-full mt-8 py-3 bg-gray-100 rounded-xl font-bold text-gray-600">Load More</button>}
+        {filteredArticles.length >= limitCount && <button onClick={() => setLimitCount(l => l + 50)} className="w-full mt-8 py-3 bg-gray-100 rounded-xl font-bold text-gray-600">Load More</button>}
     </div>
   );
 
@@ -953,7 +963,14 @@ function App() {
 
   const renderNotesDashboard = () => (
       <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold mb-6">My Notes</h2>
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold">My Notes</h2>
+            {Object.keys(notes).length > 0 && (
+                <button onClick={() => exportNotes(true)} className="flex items-center gap-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg font-bold hover:bg-yellow-200 transition-colors">
+                    <Download size={18}/> Export All
+                </button>
+            )}
+          </div>
           <div className="grid gap-4">
               {Object.entries(notes).map(([id, text]) => (
                   <div key={id} className="p-4 bg-yellow-50 rounded-xl border border-yellow-200">
@@ -1011,11 +1028,19 @@ function App() {
                         <h2 className="text-xl font-bold mb-4">Import XML</h2>
                         {importState === 'idle' ? <input type="file" onChange={handleFileUpload} /> : 
                         <div>
-                            <div className="font-bold">{importState}</div>
+                            <div className="font-bold flex items-center justify-between">
+                                <span>{importState === 'active' ? 'Importing...' : importState}</span>
+                                <span className="text-sm font-normal text-gray-500">{importProgress}%</span>
+                            </div>
+                            
+                            {/* Visual Progress Bar */}
+                            <div className="w-full bg-gray-200 rounded-full h-3 my-3 overflow-hidden">
+                                <div className="bg-green-500 h-3 rounded-full transition-all duration-300" style={{ width: `${importProgress}%` }}></div>
+                            </div>
+
                             <div className="text-sm text-gray-500 mb-4">{importStatus}</div>
                             <div className="flex gap-2">
                                 <button onClick={()=>{abortImportRef.current=true}} className="px-4 py-2 bg-yellow-100 rounded">Pause</button>
-                                {/* FIX 2: Corrected executeImportLoop to runImport */}
                                 <button onClick={()=>{if(pagesRef.current){abortImportRef.current=false; setImportState('active'); runImport(pagesRef.current);}}} className="px-4 py-2 bg-green-100 rounded">Resume</button>
                             </div>
                         </div>}
@@ -1047,10 +1072,17 @@ function App() {
                             <div><label className="block text-sm font-bold">Site Title</label><input className="w-full p-2 border rounded" value={siteTitle} onChange={e=>setSiteTitle(e.target.value)} /></div>
                             <div><label className="block text-sm font-bold">Description</label><textarea className="w-full p-2 border rounded" value={siteDescription} onChange={e=>setSiteDescription(e.target.value)} /></div>
                             
-                            {/* NEW: Logo Upload */}
+                            {/* NEW: Logo Upload with Remove */}
                             <div>
                                 <label className="block text-sm font-bold mb-2">Site Logo</label>
-                                <input type="file" accept="image/*" onChange={handleLogoUpload} className="w-full p-2 border rounded" />
+                                <div className="flex gap-2 items-center">
+                                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="w-full p-2 border rounded" />
+                                    {siteLogo && (
+                                        <button onClick={() => setSiteLogo(null)} className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Remove Logo">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    )}
+                                </div>
                                 {siteLogo && <img src={siteLogo} alt="Logo Preview" className="mt-2 h-12 object-contain" />}
                             </div>
 
