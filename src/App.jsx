@@ -111,7 +111,6 @@ const COLORS = {
 };
 const TEXT_COLORS = { gray: "text-gray-600", slate: "text-slate-600", zinc: "text-zinc-600", neutral: "text-neutral-600" };
 
-// Extended list for dynamic selection
 const POPULAR_VERSE_REFS = [
   "John 3:16", "Philippians 4:13", "Psalm 23:1", "Romans 8:28", "Jeremiah 29:11",
   "Proverbs 3:5-6", "Isaiah 40:31", "Joshua 1:9", "Romans 12:2", "Galatians 5:22-23",
@@ -142,23 +141,37 @@ const ArticleSkeleton = () => (
   </div>
 );
 
-// --- Rich Text Editor ---
+// --- Rich Text Editor (Fixed) ---
 const RichTextEditor = ({ content, onChange, theme }) => {
   const editorRef = useRef(null);
+  
   useEffect(() => {
-    if (editorRef.current && content !== editorRef.current.innerHTML && document.activeElement !== editorRef.current) {
-        editorRef.current.innerHTML = content;
+    // Robust content initialization
+    if (editorRef.current && (content || "") !== editorRef.current.innerHTML && document.activeElement !== editorRef.current) {
+        editorRef.current.innerHTML = content || "";
     }
   }, [content]);
-  const exec = (cmd, val=null) => { document.execCommand(cmd, false, val); if (editorRef.current) onChange(editorRef.current.innerHTML); };
+
+  const exec = (cmd, val=null) => { 
+    document.execCommand(cmd, false, val); 
+    if (editorRef.current) onChange(editorRef.current.innerHTML); 
+  };
+
   return (
-    <div className={`border border-gray-300 rounded-lg overflow-hidden bg-white focus-within:ring-2 ${theme.colors.ring} focus-within:border-transparent`}>
+    <div className={`border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm focus-within:ring-2 ${theme.colors.ring} focus-within:border-transparent`}>
       <div className="flex gap-1 p-2 bg-gray-50 border-b border-gray-200">
-        <button onClick={()=>exec('bold')} className="p-1 hover:bg-gray-200 rounded"><Bold size={16}/></button>
-        <button onClick={()=>exec('italic')} className="p-1 hover:bg-gray-200 rounded"><Italic size={16}/></button>
-        <button onClick={()=>exec('formatBlock','H3')} className="p-1 hover:bg-gray-200 rounded"><Type size={16}/></button>
+        <button type="button" onClick={(e)=>{e.preventDefault(); exec('bold');}} className="p-2 hover:bg-gray-200 rounded text-gray-700" title="Bold"><Bold size={18}/></button>
+        <button type="button" onClick={(e)=>{e.preventDefault(); exec('italic');}} className="p-2 hover:bg-gray-200 rounded text-gray-700" title="Italic"><Italic size={18}/></button>
+        <button type="button" onClick={(e)=>{e.preventDefault(); exec('formatBlock','H3');}} className="p-2 hover:bg-gray-200 rounded text-gray-700" title="Heading"><Type size={18}/></button>
+        <button type="button" onClick={(e)=>{e.preventDefault(); exec('insertUnorderedList');}} className="p-2 hover:bg-gray-200 rounded text-gray-700" title="Bullet List"><List size={18}/></button>
       </div>
-      <div ref={editorRef} contentEditable className={`min-h-[200px] p-4 outline-none prose prose-sm max-w-none ${theme.font}`} onInput={e => onChange(e.currentTarget.innerHTML)} />
+      <div 
+        ref={editorRef} 
+        contentEditable 
+        className={`p-4 outline-none max-w-none text-gray-800 ${theme.font} text-base leading-relaxed`}
+        style={{ minHeight: '300px' }}
+        onInput={e => onChange(e.currentTarget.innerHTML)} 
+      />
     </div>
   );
 };
@@ -173,7 +186,8 @@ const VerseTooltip = ({ reference, theme }) => {
     if (text || loading || error) return;
     setLoading(true);
     try {
-      const cleanRef = reference.replace(/\.$/, '').replace(/\s+/g, ' ');
+      // Clean reference further before fetching
+      const cleanRef = reference.replace(/[.,;:]$/, '').replace(/\s+/g, ' ').trim();
       const res = await fetch(`https://bible-api.com/${encodeURIComponent(cleanRef)}?translation=kjv`);
       const data = await res.json();
       if (data && data.text) setText(data.text); else setError(true);
@@ -192,37 +206,36 @@ const VerseTooltip = ({ reference, theme }) => {
   );
 };
 
-// --- HTML Renderer ---
+// --- HTML Renderer (Verse Regex Fix) ---
 const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
-  const verseRegex = /(\b(?:(?:1|2|3|I|II)\s*)?(?:[A-Za-z]+(?:\s+of\s+[A-Za-z]+)?(?:\s+[A-Za-z]+)?)(?:\.|(?:\s+))\s*\d+:\d+(?:[-–,]\s*\d+)*)/g;
-  const isVerseString = (str) => /^(\b(?:(?:1|2|3|I|II)\s*)?(?:[A-Za-z]+(?:\s+of\s+[A-Za-z]+)?(?:\s+[A-Za-z]+)?)(?:\.|(?:\s+))\s*\d+:\d+(?:[-–,]\s*\d+)*)$/.test(str);
-
+  // STRICTER Regex: Matches Book Chapter:Verse, avoiding random text
+  const verseRegex = /(\b(?:[123I]{1,2}\s+)?[A-Z][a-z]+(?:\s+of\s+[A-Z][a-z]+)?(?:\s+[A-Z][a-z]+)?\s+\d+:\d+(?:[-–,]\d+)*\b)/g;
+  
   const renderNodes = (nodes) => Array.from(nodes).map((node, i) => {
-      // Text Node
       if (node.nodeType === 3) {
         const text = node.textContent;
         if(!text.trim()) return null;
+        
         const parts = text.split(verseRegex);
         return (
           <React.Fragment key={i}>
             {parts.map((part, index) => {
-               if (isVerseString(part)) return <VerseTooltip key={index} reference={part} theme={theme} />;
+               if (verseRegex.test(part)) {
+                   return <VerseTooltip key={index} reference={part} theme={theme} />;
+               }
                return <span key={index}>{part}</span>;
             })}
           </React.Fragment>
         );
       }
       
-      // Element Node
       if (node.nodeType === 1) {
         const tagName = node.tagName.toLowerCase();
         if (['script','style'].includes(tagName)) return null;
         const props = { key: i };
         if (node.attributes) Array.from(node.attributes).forEach(attr => { if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; });
 
-        // Formatting Classes
         let baseClass = props.className || '';
-        // Add strong typography classes here
         if (tagName === 'p') baseClass += ' mb-6 leading-relaxed text-gray-800 text-base md:text-lg';
         if (tagName === 'h1') baseClass += ' text-3xl font-extrabold mt-10 mb-6 text-gray-900 border-b pb-4';
         if (tagName === 'h2') baseClass += ' text-2xl font-bold mt-8 mb-4 text-gray-800 border-b pb-2 border-gray-100';
@@ -236,7 +249,6 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
         
         props.className = baseClass;
         
-        // Link Handlers
         if (props['data-wiki-link'] && onNavigate) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); onNavigate(props['data-wiki-link']); };
           props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold bg-indigo-50 px-1 rounded`;
@@ -362,7 +374,7 @@ function App() {
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState("");
   const [importStatus, setImportStatus] = useState(null);
-  const [importProgress, setImportProgress] = useState(0); // NEW State for Progress
+  const [importProgress, setImportProgress] = useState(0);
   const [adminSearchQuery, setAdminSearchQuery] = useState("");
   const [customSections, setCustomSections] = useState([]);
   const [dbCategoryCounts, setDbCategoryCounts] = useState({});
@@ -438,11 +450,8 @@ function App() {
 
     const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
     
-    // REFACTOR: Fetch all data, do NOT filter by category in Firestore effect to avoid re-subscription loop.
-    // Client-side filtering is fast enough for <5000 docs and safer for this env.
     const unsub = onSnapshot(articlesRef, (snap) => {
         let fetched = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        // Sort by date descending
         fetched.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
         setArticles(fetched);
         setIsLoading(false);
@@ -460,7 +469,7 @@ function App() {
         (e) => console.warn("Stats error:", e.code));
 
     return () => { unsub(); unsubSections(); unsubStats(); };
-  }, [user]); // Removed activeCategory and limitCount from dependency array to prevent re-fetching
+  }, [user]);
 
   useEffect(() => { if (typeof window !== 'undefined') localStorage.setItem('theologue_notes', JSON.stringify(notes)); }, [notes]);
 
@@ -481,7 +490,7 @@ function App() {
      return Array.from(new Set(articles.map(a => a.category))).sort();
   }, [articles, dbCategoryCounts]);
 
-  // NEW: Filter Logic for both Search AND Category
+  // Filter Logic
   const filteredArticles = useMemo(() => {
     let result = articles;
     if (activeCategory) {
@@ -494,28 +503,21 @@ function App() {
     return result;
   }, [articles, searchQuery, activeCategory]);
 
-  // NEW: Robust Image Generation based on Category Hash
   const getCategoryImage = (cat) => {
       if(!cat) return "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)";
-      
-      // Generate simple hash
       let hash = 0;
       for (let i = 0; i < cat.length; i++) hash = cat.charCodeAt(i) + ((hash << 5) - hash);
-      
-      // Use hash to pick a gradient style
       const styles = [
-        "linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%)", // Blue
-        "linear-gradient(135deg, #10b981 0%, #064e3b 100%)", // Emerald
-        "linear-gradient(135deg, #f59e0b 0%, #78350f 100%)", // Amber
-        "linear-gradient(135deg, #8b5cf6 0%, #4c1d95 100%)", // Violet
-        "linear-gradient(135deg, #ec4899 0%, #831843 100%)", // Pink
-        "linear-gradient(135deg, #6366f1 0%, #312e81 100%)", // Indigo
-        "linear-gradient(to right, #243949 0%, #517fa4 100%)", // Steel
-        "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)", // Deep Purple
+        "linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%)",
+        "linear-gradient(135deg, #10b981 0%, #064e3b 100%)",
+        "linear-gradient(135deg, #f59e0b 0%, #78350f 100%)",
+        "linear-gradient(135deg, #8b5cf6 0%, #4c1d95 100%)",
+        "linear-gradient(135deg, #ec4899 0%, #831843 100%)",
+        "linear-gradient(135deg, #6366f1 0%, #312e81 100%)",
+        "linear-gradient(to right, #243949 0%, #517fa4 100%)",
+        "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)",
       ];
-      
-      const styleIndex = Math.abs(hash) % styles.length;
-      return styles[styleIndex];
+      return styles[Math.abs(hash) % styles.length];
   };
 
   // --- Helpers ---
@@ -551,7 +553,6 @@ function App() {
   };
 
   const handleSaveArticle = async () => {
-    // FIX: Trim category to avoid mismatch issues
     const articleData = { 
         title: editorTitle, 
         category: (editorCategory || "Uncategorized").trim(), 
@@ -763,7 +764,7 @@ function App() {
       let batchCounts = {};
       
       setImportStatus(`Importing ${i} / ${total}`);
-      setImportProgress(0); // Reset progress
+      setImportProgress(0); 
       
       while(i < Math.min(total, limit)) {
           if(abortImportRef.current) { setImportState('paused'); importCursorRef.current = i; return; }
@@ -794,9 +795,8 @@ function App() {
                   i += 10; 
                   importCursorRef.current = i; 
                   setImportStatus(`Importing... ${i} / ${total}`);
-                  // Update Progress Bar
                   setImportProgress(Math.min(100, Math.round((i / total) * 100)));
-                  await new Promise(r => setTimeout(r, 200)); // Slight delay to let UI breathe
+                  await new Promise(r => setTimeout(r, 200)); 
               } catch(e) { if(e.code === 'resource-exhausted') await new Promise(r => setTimeout(r, 10000)); else i += 10; }
           } else { i += 10; }
       }
@@ -1051,24 +1051,93 @@ function App() {
                 {adminTab === 'import' && (
                     <div>
                         <h2 className="text-xl font-bold mb-4">Import XML</h2>
-                        {importState === 'idle' ? <input type="file" onChange={handleFileUpload} /> : 
-                        <div>
-                            <div className="font-bold flex items-center justify-between">
-                                <span>{importState === 'active' ? 'Importing...' : importState}</span>
-                                <span className="text-sm font-normal text-gray-500">{importProgress}%</span>
+                        
+                        {/* 1. IDLE STATE */}
+                        {importState === 'idle' && (
+                            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors group cursor-pointer relative">
+                                <Upload className="mx-auto h-12 w-12 text-gray-400 group-hover:text-indigo-500 transition-colors mb-4"/>
+                                <p className="text-sm text-gray-600 font-medium mb-1">Click to upload XML</p>
+                                <p className="text-xs text-gray-400">Supports MediaWiki Export Format</p>
+                                <input 
+                                    type="file" 
+                                    onChange={handleFileUpload} 
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    accept=".xml"
+                                />
                             </div>
-                            
-                            {/* Visual Progress Bar */}
-                            <div className="w-full bg-gray-200 rounded-full h-3 my-3 overflow-hidden">
-                                <div className="bg-green-500 h-3 rounded-full transition-all duration-300" style={{ width: `${importProgress}%` }}></div>
-                            </div>
+                        )}
 
-                            <div className="text-sm text-gray-500 mb-4">{importStatus}</div>
-                            <div className="flex gap-2">
-                                <button onClick={()=>{abortImportRef.current=true}} className="px-4 py-2 bg-yellow-100 rounded">Pause</button>
-                                <button onClick={()=>{if(pagesRef.current){abortImportRef.current=false; setImportState('active'); runImport(pagesRef.current);}}} className="px-4 py-2 bg-green-100 rounded">Resume</button>
+                        {/* 2. ACTIVE / PAUSED STATE */}
+                        {(importState === 'active' || importState === 'paused') && (
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                <div className="font-bold flex items-center justify-between mb-2">
+                                    <span className={`flex items-center gap-2 ${importState === 'active' ? 'text-indigo-600' : 'text-amber-600'}`}>
+                                        {importState === 'active' ? <Loader size={18} className="animate-spin" /> : <PauseCircle size={18} />}
+                                        {importState === 'active' ? 'Importing in progress...' : 'Import Paused'}
+                                    </span>
+                                    <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded text-gray-600">{importProgress}%</span>
+                                </div>
+                                
+                                {/* Visual Progress Bar */}
+                                <div className="w-full bg-gray-100 rounded-full h-3 mb-4 overflow-hidden shadow-inner">
+                                    <div 
+                                        className={`h-3 rounded-full transition-all duration-300 ${importState === 'active' ? 'bg-indigo-500' : 'bg-amber-400'}`} 
+                                        style={{ width: `${importProgress}%` }}
+                                    ></div>
+                                </div>
+
+                                <div className="text-sm text-gray-500 mb-6 font-mono bg-gray-50 p-2 rounded border border-gray-100 truncate">
+                                    {importStatus}
+                                </div>
+
+                                <div className="flex gap-3">
+                                    {importState === 'active' ? (
+                                        <button 
+                                            onClick={() => { abortImportRef.current = true; }} 
+                                            className="flex-1 py-2 bg-amber-100 text-amber-800 font-bold rounded-lg hover:bg-amber-200 transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <PauseCircle size={18} /> Pause Import
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={() => { 
+                                                if (pagesRef.current) { 
+                                                    abortImportRef.current = false; 
+                                                    setImportState('active'); 
+                                                    runImport(pagesRef.current); 
+                                                } 
+                                            }} 
+                                            className="flex-1 py-2 bg-green-100 text-green-800 font-bold rounded-lg hover:bg-green-200 transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <PlayCircle size={18} /> Resume Import
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                        </div>}
+                        )}
+
+                        {/* 3. COMPLETED STATE */}
+                        {importState === 'completed' && (
+                            <div className="text-center p-8 bg-green-50 rounded-xl border border-green-200 animate-fadeIn">
+                                <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                                    <CheckCircle size={32} />
+                                </div>
+                                <h3 className="text-lg font-bold text-green-900 mb-2">Import Successful!</h3>
+                                <p className="text-green-700 mb-6">{importStatus}</p>
+                                <button 
+                                    onClick={() => {
+                                        setImportState('idle');
+                                        setImportProgress(0);
+                                        setImportStatus(null);
+                                        pagesRef.current = null;
+                                        importCursorRef.current = 0;
+                                    }}
+                                    className="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center gap-2 mx-auto"
+                                >
+                                    <Upload size={18} /> Import Another File
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
                 {adminTab === 'sections' && (
