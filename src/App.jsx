@@ -790,10 +790,36 @@ function App() {
               const rev = p.getElementsByTagName("revision")[0];
               const text = rev ? rev.getElementsByTagName("text")[0]?.textContent : "";
               if(title && text) {
-                  let clean = text.replace(/<!--[\s\S]*?-->/g, "").replace(/\{\|[\s\S]*?\|\}/g, "").replace(/\[\[(File|Image):[^\]]*\]\]/gi, "");
+                  let clean = text.replace(/<!--[\s\S]*?-->/g, ""); // Remove comments
+                  clean = clean.replace(/\{\|[\s\S]*?\|\}/g, ""); // Remove tables (often messy)
+                  clean = clean.replace(/\[\[(File|Image):[^\]]*\]\]/gi, ""); // Remove images/files
+                  
+                  // NEW: Remove Categories from text body (they are metadata)
+                  clean = clean.replace(/\[\[Category:[^\]]+\]\]/gi, "");
+
+                  // NEW: Handle MediaWiki Bold and Italic
+                  clean = clean.replace(/'''(.+?)'''/g, "<b>$1</b>"); // Bold
+                  clean = clean.replace(/''(.+?)''/g, "<i>$1</i>"); // Italic
+                  
+                  // Remove duplicate title heading from content
+                  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  const titleRegex = new RegExp(`^\\s*={2,}\\s*${escapedTitle}\\s*={2,}\\s*`, 'im');
+                  clean = clean.replace(titleRegex, "");
+
+                  // Headings
                   clean = clean.replace(/={2,}\s*(.*?)\s*={2,}/g, (m,t) => `<h2 class="text-xl font-bold mt-4">${t}</h2>`);
+                  
+                  // Anchors
                   clean = clean.replace(/\[\[#([^|\]]+)(?:\|([^\]]+))?\]\]/g, (m,a,l) => `<span data-wiki-anchor="${a.trim()}" class="text-indigo-600 font-medium hover:underline cursor-pointer">${l||a}</span>`);
-                  clean = clean.replace(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/g, (m,t,l) => `<span data-wiki-link="${t.trim()}" class="text-indigo-600 font-medium hover:underline cursor-pointer">${l||t}</span>`);
+                  
+                  // NEW: Improved Link Handling
+                  // Handles [[Article_Name]] -> converts to space-based title for lookup
+                  // Handles [[Article|Label]]
+                  clean = clean.replace(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/g, (m,t,l) => {
+                      const target = t.trim().replace(/_/g, ' '); // Normalize underscores to spaces for navigation
+                      const label = l || target; // Use target as label if label is missing
+                      return `<span data-wiki-link="${target}" class="text-indigo-600 font-medium hover:underline cursor-pointer">${label}</span>`;
+                  });
                   
                   const catMatch = text.match(/\[\[Category:([^\]|]+)/i);
                   const cat = catMatch ? catMatch[1].trim() : "Imported";
