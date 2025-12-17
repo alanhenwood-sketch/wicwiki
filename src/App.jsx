@@ -51,7 +51,8 @@ const liveFirebaseConfig = {
 };
 
 // 2. GEMINI AI CONFIG
-const GEMINI_API_KEY = "AIzaSyCWAdKz-R4FZ7ftUoFa0Atkjq_ery3uB7M"; // Replace with your new Gemini API Key
+// In this environment, we use the injected key.
+const GEMINI_API_KEY = "AIzaSyCWAdKz-R4FZ7ftUoFa0Atkjq_ery3uB7M"; 
 
 // --- ERROR BOUNDARY ---
 class ErrorBoundary extends React.Component {
@@ -160,7 +161,7 @@ const ArticleSkeleton = () => (
 // --- Rich Text Editor ---
 const RichTextEditor = ({ content, onChange, theme }) => {
   const editorRef = useRef(null);
-  
+   
   useEffect(() => {
     if (editorRef.current && (content || "") !== editorRef.current.innerHTML && document.activeElement !== editorRef.current) {
         editorRef.current.innerHTML = content || "";
@@ -240,10 +241,10 @@ const BibleReader = ({ theme, book, chapter, setBook, setChapter }) => {
                     value={book} 
                     onChange={e => {setBook(e.target.value); setChapter(1);}} 
                     className="flex-1 p-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-white dark:bg-gray-800 text-sm font-medium text-amber-900 dark:text-amber-100 focus:ring-2 focus:ring-amber-400 focus:outline-none"
-                 >
+                  >
                     {CANONICAL_BOOKS.map(b => <option key={b} value={b}>{b}</option>)}
-                 </select>
-                 <div className="flex items-center bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-700 overflow-hidden">
+                  </select>
+                  <div className="flex items-center bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-700 overflow-hidden">
                     <span className="px-2 text-xs text-amber-500 font-bold uppercase">Ch</span>
                     <input 
                         type="number" 
@@ -251,7 +252,7 @@ const BibleReader = ({ theme, book, chapter, setBook, setChapter }) => {
                         onChange={e => setChapter(Math.max(1, parseInt(e.target.value) || 1))} 
                         className="w-12 p-2 text-sm font-bold text-center text-amber-900 dark:text-amber-100 focus:outline-none bg-transparent" 
                     />
-                 </div>
+                  </div>
             </div>
             
             <div className="flex-1 overflow-y-auto p-5 text-amber-900/90 dark:text-amber-100/90 font-serif leading-loose text-base bg-amber-50/30 dark:bg-transparent">
@@ -362,13 +363,13 @@ const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
     "1 John", "1 Jn", "1 J", "I John", "I Jn", "2 John", "2 Jn", "2 J", "II John", "II Jn",
     "3 John", "3 Jn", "3 J", "III John", "III Jn", "Jude", "Jd", "Revelation", "Rev", "Rv"
   ];
-  
+   
   const sortedBooks = books.sort((a,b) => b.length - a.length).join("|");
   // Updated Regex: Allows for an optional dot \.? after the book name before the space
   const verseRegex = new RegExp(`(\\b(?:${sortedBooks})\\.?\\s+\\d+:\\d+(?:[-–,]\\d+)*\\b)`, 'gi');
-  
+   
   const youtubeRegex = /\b(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:\S+)?/g;
-  
+   
   const renderNodes = (nodes) => Array.from(nodes).map((node, i) => {
       // --- TEXT NODE PROCESSING ---
       if (node.nodeType === 3) {
@@ -504,7 +505,7 @@ const VerseOfTheDayWidget = () => {
 const FloatingNotesWidget = ({ article, noteContent, onChange, onExport, onShare, visible, setVisible, theme }) => {
   // CHANGED: Initialize minimized state to true so it starts collapsed
   const [isMinimized, setIsMinimized] = useState(true);
-  
+   
   if (!visible || !article) return null;
   if (isMinimized) return (<button onClick={() => setIsMinimized(false)} className={`fixed bottom-6 right-6 z-50 p-3 rounded-full shadow-xl transition-all hover:scale-105 flex items-center gap-2 animate-fadeIn border-2 border-white dark:border-gray-700 text-white ${theme.colors.bg}`}><StickyNote size={24} /></button>);
 
@@ -557,13 +558,13 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
           category: a.category || "Uncategorized",
           snippet: (a.content || "").replace(/<[^>]+>/g, ' ').substring(0, 150)
       }));
-      
+       
       const prompt = `
         You are a theological research librarian. User Query: "${query}".
-        
+         
         Library Index: 
         ${JSON.stringify(articleSummary)}
-        
+         
         Task: Identify the 3-5 most relevant articles. 
         If the query is broad, return the best matches. 
         If specific, find the exact match.
@@ -588,7 +589,7 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
       });
 
       const data = await res.json();
-      
+       
       if (data.error || !data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
           console.warn("AI returned error or no text, using fallback");
           setResponse(fallbackResults);
@@ -596,7 +597,7 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
       }
 
       const rawText = data.candidates[0].content.parts[0].text;
-      
+       
       // Robust Parsing: Find first '[' and last ']'
       let ids = [];
       try {
@@ -614,7 +615,7 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
       }
 
       const matchedArticles = ids.map(id => articles.find(a => a.id === id)).filter(Boolean);
-      
+       
       // If AI found nothing, fallback to keywords
       if (matchedArticles.length === 0) {
           setResponse(fallbackResults);
@@ -743,7 +744,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [limitCount, setLimitCount] = useState(50);
   const [homeFilter, setHomeFilter] = useState('recent'); // 'recent', 'popular', 'random'
-  
+   
   // Settings
   const [siteTitle, setSiteTitle] = useState("Theologue");
   const [siteDescription, setSiteDescription] = useState("Welcome to the library.");
@@ -757,7 +758,7 @@ function App() {
   // NEW: Dark Mode Logo Support
   const [siteLogoDark, setSiteLogoDark] = useState(null); 
   const [isDarkMode, setIsDarkMode] = useState(false);
-  
+   
   // Admin & Data
   const [adminTab, setAdminTab] = useState('manage');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -789,7 +790,7 @@ function App() {
       } 
       catch { return {}; } 
   });
-  
+   
   // UI States
   const [showNoteWidget, setShowNoteWidget] = useState(true);
   const [isWelcomeMinimized, setIsWelcomeMinimized] = useState(false);
@@ -812,7 +813,7 @@ function App() {
   const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
   const [loginStep, setLoginStep] = useState('password');
   const [mfaInput, setMfaInput] = useState("");
-  
+   
   // New State for delete confirmation
   const [deleteConfirmation, setDeleteConfirmation] = useState(null); // { type: 'section' | 'article', id: string }
 
@@ -832,7 +833,7 @@ function App() {
   }), [siteColor, siteFont, siteTextSize, siteTextColor]);
 
   // --- Effects ---
-  
+   
   // Dark Mode Detection Effect
   useEffect(() => {
     // Check initial system preference
@@ -942,7 +943,7 @@ function App() {
 
   // Ref to hold notes for listener
   const notesRef = useRef(notes);
-  
+   
   // Update ref and storage when notes change
   useEffect(() => { 
       notesRef.current = notes;
@@ -1060,7 +1061,7 @@ function App() {
   };
 
   // --- NAVIGATION LOGIC (History Based) ---
-  
+   
   // 1. Initialize History State on Mount & Listen to PopState
   useEffect(() => {
       const initialState = { view: 'home', data: null };
@@ -1150,7 +1151,7 @@ function App() {
   const handleNavClick = (viewName) => {
       navigateTo(viewName);
   };
-  
+   
   const handleOpenBible = (ref) => {
     const match = ref.trim().match(/^(.+?)\.?\s+(\d+):/);
     if (match) {
@@ -1183,7 +1184,7 @@ function App() {
 
   const handleLogout = () => { setIsAuthenticated(false); navigateTo('home'); };
   const showNotification = (msg) => { setNotification({message: msg}); setTimeout(()=>setNotification(null), 3000); };
-  
+   
   const handleNavigateByTitle = async (target) => {
       const title = target.split('#')[0];
       const local = articles.find(a => a.title.toLowerCase() === title.toLowerCase());
@@ -1225,10 +1226,22 @@ function App() {
         lastUpdated: new Date().toISOString().split('T')[0] 
     };
     try {
-      if (editingId) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'articles', editingId), articleData); showNotification("Updated!"); } 
-      else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), { ...articleData, createdAt: serverTimestamp() }); showNotification("Published!"); }
+      if (editingId) { 
+          // Update Logic
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'articles', editingId), articleData); 
+          // Update Local State
+          setArticles(prev => prev.map(a => a.id === editingId ? { ...a, ...articleData } : a));
+          showNotification("Updated!"); 
+      } 
+      else { 
+          // Create Logic
+          const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), { ...articleData, createdAt: serverTimestamp() }); 
+          // Update Local State (Mocking timestamp to avoid list crash)
+          setArticles(prev => [{ id: docRef.id, ...articleData, createdAt: { seconds: Date.now()/1000 } }, ...prev]);
+          showNotification("Published!"); 
+      }
       setEditingId(null); setEditorTitle(""); setEditorContent(""); setAdminTab('manage');
-    } catch (e) { showNotification("Save failed"); }
+    } catch (e) { console.error(e); showNotification("Save failed"); }
   };
 
   const handleSaveSettings = async () => {
@@ -1245,7 +1258,7 @@ function App() {
           showNotification("Settings Saved!");
       } catch(e) { console.error(e); showNotification("Failed to save settings"); }
   };
-  
+   
   const handleLogoUpload = (event, type = 'light') => { 
     const file = event.target.files[0]; 
     if (file) { 
@@ -1261,6 +1274,8 @@ function App() {
   const handleDelete = async (id) => {
     if(confirm("Delete this article?")) {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'articles', id));
+        // Remove from local state immediately
+        setArticles(prev => prev.filter(a => a.id !== id));
         showNotification("Deleted");
     }
   };
@@ -1549,7 +1564,7 @@ function App() {
       setImportStatus("Import Complete!");
       setImportProgress(100);
   };
-  
+   
   const rebuildStats = async () => {
      if(!db) return;
      setImportStatus("Rebuilding stats...");
@@ -1843,7 +1858,7 @@ function App() {
                            </div>
                            {article && (
                              <button onClick={() => navigateTo('article', article)} className="text-xs bg-yellow-100 dark:bg-yellow-900/40 hover:bg-yellow-200 dark:hover:bg-yellow-900/60 text-yellow-800 dark:text-yellow-200 px-3 py-1 rounded-full font-medium transition-colors">
-                               View Article
+                                View Article
                              </button>
                            )}
                         </div>
@@ -1912,8 +1927,8 @@ function App() {
                 
                 {adminTab === 'settings' && (
                     <div>
-                         <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Settings</h2>
-                         <div className="space-y-4">
+                          <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Settings</h2>
+                          <div className="space-y-4">
                             <div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300">Site Title</label><input className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={siteTitle} onChange={e=>setSiteTitle(e.target.value)} /></div>
                             <div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300">Description</label><textarea className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={siteDescription} onChange={e=>setSiteDescription(e.target.value)} /></div>
                             
@@ -1990,6 +2005,44 @@ function App() {
                                 <button onClick={handleSaveSettings} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700">Save Settings</button>
                                 <button onClick={() => setImageSeed(s => s + 1)} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 dark:text-white">Refresh Images</button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* RESTORED: Create Article View */}
+                {adminTab === 'create' && (
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">{editingId ? 'Edit Article' : 'New Article'}</h2>
+                        </div>
+                        <input 
+                            className="w-full p-3 border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white font-bold text-lg" 
+                            placeholder="Article Title" 
+                            value={editorTitle} 
+                            onChange={e=>setEditorTitle(e.target.value)} 
+                        />
+                        <div className="relative">
+                            <input 
+                                className="w-full p-3 border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                                placeholder="Category (e.g., Theology, History)" 
+                                value={editorCategory} 
+                                onChange={e=>{setEditorCategory(e.target.value); setShowCategorySuggestions(true);}}
+                                onBlur={()=>setTimeout(()=>setShowCategorySuggestions(false), 200)}
+                            />
+                            {showCategorySuggestions && (
+                                <div className="absolute top-full left-0 w-full bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg z-10 mt-1 max-h-40 overflow-y-auto">
+                                    {categories.filter(c => c.toLowerCase().includes(editorCategory.toLowerCase())).map(c => (
+                                        <div key={c} onMouseDown={()=>setEditorCategory(c)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm dark:text-white">{c}</div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <RichTextEditor content={editorContent} onChange={setEditorContent} theme={currentTheme} />
+                        <div className="flex justify-end gap-2 pt-4">
+                            <button onClick={() => setAdminTab('manage')} className="px-4 py-2 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Cancel</button>
+                            <button onClick={handleSaveArticle} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 flex items-center gap-2">
+                                <Save size={18}/> {editingId ? 'Update Article' : 'Publish Article'}
+                            </button>
                         </div>
                     </div>
                 )}
@@ -2122,8 +2175,8 @@ function App() {
                 {adminTab === 'sections' && ( /* ... Sections UI ... */ 
                     <div>
                         <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Manage Home Sections</h2>
-                         <RichTextEditor content={sectionContent} onChange={setSectionContent} theme={currentTheme} />
-                         <div className="mt-4 flex gap-4 text-gray-700 dark:text-gray-300">
+                          <RichTextEditor content={sectionContent} onChange={setSectionContent} theme={currentTheme} />
+                          <div className="mt-4 flex gap-4 text-gray-700 dark:text-gray-300">
                             <label><input type="checkbox" checked={sectionPersistent} onChange={e=>setSectionPersistent(e.target.checked)}/> Persistent</label>
                             {!sectionPersistent && <input type="date" value={sectionExpiry} onChange={e=>setSectionExpiry(e.target.value)} className="ml-2 p-1 border rounded dark:bg-gray-700 dark:border-gray-600" />}
                         </div>
