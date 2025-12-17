@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronsLeft, ChevronsRight, BarChart, Smartphone, ShieldCheck, ArrowLeft,
   Calendar, Megaphone, Clock, ExternalLink, Play, RefreshCw, Quote, MoreHorizontal,
   PauseCircle, PlayCircle, XCircle, Shuffle, TrendingUp, ArrowUpAZ, ArrowDownAZ,
-  ArrowUp, ArrowDown, BookOpen, Bot, Moon, Sun
+  ArrowUp, ArrowDown, BookOpen, Bot, Moon, Sun, Youtube, Link as LinkIcon
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -53,6 +53,49 @@ const liveFirebaseConfig = {
 // 2. GEMINI AI CONFIG
 // In this environment, we use the injected key.
 const GEMINI_API_KEY = "AIzaSyCWAdKz-R4FZ7ftUoFa0Atkjq_ery3uB7M"; 
+
+// --- HELPER FUNCTIONS ---
+
+// Helper to compress image
+const compressImage = (file, maxWidth = 600, quality = 0.7) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL(file.type, quality));
+      };
+    };
+  });
+};
+
+// Helper to parse style string into object for React
+const parseStyleString = (styleString) => {
+  if (!styleString) return {};
+  return styleString.split(';').reduce((acc, style) => {
+    const [key, value] = style.split(':');
+    if (key && value) {
+      const camelKey = key.trim().replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+      acc[camelKey] = value.trim();
+    }
+    return acc;
+  }, {});
+};
 
 // --- ERROR BOUNDARY ---
 class ErrorBoundary extends React.Component {
@@ -158,9 +201,10 @@ const ArticleSkeleton = () => (
   </div>
 );
 
-// --- Rich Text Editor ---
+// --- Rich Text Editor (Enhanced) ---
 const RichTextEditor = ({ content, onChange, theme }) => {
   const editorRef = useRef(null);
+  const fileInputRef = useRef(null);
    
   useEffect(() => {
     if (editorRef.current && (content || "") !== editorRef.current.innerHTML && document.activeElement !== editorRef.current) {
@@ -168,18 +212,96 @@ const RichTextEditor = ({ content, onChange, theme }) => {
     }
   }, [content]);
 
-  const exec = (cmd, val=null) => { 
+  const exec = (cmd, val = null) => { 
     document.execCommand(cmd, false, val); 
     if (editorRef.current) onChange(editorRef.current.innerHTML); 
   };
 
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+        const base64 = await compressImage(file, 600, 0.7);
+        exec('insertImage', base64);
+    } catch (err) {
+        console.error("Image upload failed", err);
+        alert("Failed to upload image.");
+    }
+    // Reset input
+    if(fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleInsertVideo = () => {
+      const url = prompt("Enter YouTube URL (e.g. https://youtube.com/watch?v=...):");
+      if (url) {
+          // We insert the URL as text. The HtmlContentRenderer detects this regex and converts it to an embed automatically.
+          // Adding a newline to ensure it sits on its own line for better detection/rendering
+          exec('insertHTML', `<br/>${url}<br/>`);
+      }
+  };
+
+  const handleInsertLink = () => {
+      const url = prompt("Enter URL:");
+      if (url) exec('createLink', url);
+  };
+
   return (
     <div className={`border border-gray-300 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800 shadow-sm focus-within:ring-2 ${theme.colors.ring} focus-within:border-transparent`}>
-      <div className="flex gap-1 p-2 bg-gray-50 dark:bg-slate-700/50 border-b border-gray-200 dark:border-slate-700">
-        <button type="button" onClick={(e)=>{e.preventDefault(); exec('bold');}} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Bold"><Bold size={18}/></button>
-        <button type="button" onClick={(e)=>{e.preventDefault(); exec('italic');}} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Italic"><Italic size={18}/></button>
-        <button type="button" onClick={(e)=>{e.preventDefault(); exec('formatBlock','H3');}} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Heading"><Type size={18}/></button>
-        <button type="button" onClick={(e)=>{e.preventDefault(); exec('insertUnorderedList');}} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Bullet List"><List size={18}/></button>
+      <div className="flex gap-1 p-2 bg-gray-50 dark:bg-slate-700/50 border-b border-gray-200 dark:border-slate-700 flex-wrap items-center">
+        
+        {/* Basic Formatting */}
+        <div className="flex gap-1 border-r border-gray-300 dark:border-slate-600 pr-2 mr-2">
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('bold');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Bold"><Bold size={16}/></button>
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('italic');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Italic"><Italic size={16}/></button>
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('underline');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Underline"><Underline size={16}/></button>
+        </div>
+
+        {/* Fonts & Colors */}
+        <div className="flex gap-2 items-center border-r border-gray-300 dark:border-slate-600 pr-2 mr-2">
+            <select onChange={(e) => exec('fontName', e.target.value)} className="text-xs p-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white w-20">
+                <option value="Arial">Arial</option>
+                <option value="Courier New">Courier</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Times New Roman">Times</option>
+                <option value="Verdana">Verdana</option>
+            </select>
+            
+            <div className="relative group flex items-center" title="Text Color">
+                <Palette size={16} className="text-gray-500 dark:text-slate-400 absolute pointer-events-none left-1"/>
+                <input 
+                    type="color" 
+                    onChange={(e) => exec('foreColor', e.target.value)} 
+                    className="w-8 h-6 pl-5 opacity-0 absolute cursor-pointer"
+                />
+                <div className="w-6 h-4 bg-gradient-to-r from-red-500 via-green-500 to-blue-500 rounded ml-1"></div>
+            </div>
+        </div>
+
+        {/* Structure */}
+        <div className="flex gap-1 border-r border-gray-300 dark:border-slate-600 pr-2 mr-2">
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('formatBlock','H3');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Heading"><Type size={16}/></button>
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('insertUnorderedList');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Bullet List"><List size={16}/></button>
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('insertOrderedList');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Numbered List"><List size={16} className="rotate-180"/></button>
+        </div>
+
+        {/* Media */}
+        <div className="flex gap-1">
+            <button type="button" onClick={handleInsertLink} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Insert Link"><LinkIcon size={16}/></button>
+            
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Insert Image">
+                <ImageIcon size={16}/>
+            </button>
+            <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept="image/*" 
+                onChange={handleImageUpload}
+            />
+
+            <button type="button" onClick={handleInsertVideo} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Insert Video"><Youtube size={16}/></button>
+        </div>
+
       </div>
       <div 
         ref={editorRef} 
@@ -417,7 +539,11 @@ const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
         const props = { key: i };
         
         if (node.attributes) Array.from(node.attributes).forEach(attr => { 
-            if (attr.name === 'style') return; // Prevent React Error #62
+            if (attr.name === 'style') {
+                // Parse inline styles to React object
+                props.style = parseStyleString(attr.value);
+                return;
+            }
             if (attr.name === 'class') { props.className = attr.value; return; }
             if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; 
         });
@@ -452,6 +578,8 @@ const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
   });
   try { return <>{renderNodes(new DOMParser().parseFromString(html || "", 'text/html').body.childNodes)}</>; } catch { return null; }
 };
+
+// ... (Rest of the file remains exactly the same, keeping existing components like VerseOfTheDayWidget, App, etc.)
 
 const VerseOfTheDayWidget = () => {
   const [verseData, setVerseData] = useState({ text: "Loading verse...", ref: "" });
@@ -1259,34 +1387,6 @@ function App() {
       } catch(e) { console.error(e); showNotification("Failed to save settings"); }
   };
    
-  // Helper to compress image
-  const compressImage = (file, maxWidth = 300, quality = 0.7) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          
-          if (width > maxWidth) {
-            height = (height * maxWidth) / width;
-            width = maxWidth;
-          }
-          
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL(file.type, quality));
-        };
-      };
-    });
-  };
-
   const handleLogoUpload = async (event, type = 'light') => { 
     const file = event.target.files[0]; 
     if (file) { 
