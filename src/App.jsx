@@ -1481,6 +1481,8 @@ function App() {
       URL.revokeObjectURL(url);
   };
 
+  // --- FIXED: Delete All (Recursive Batching) ---
+  // This now deletes in chunks of 200 instead of loading everything at once
   const handleDeleteAll = async () => {
     if(!confirm("DANGER: This will delete ALL articles. This cannot be undone. Are you sure?")) return;
     if(!confirm("Are you REALLY sure?")) return;
@@ -1489,33 +1491,34 @@ function App() {
     try {
         const deleteBatch = async () => {
             const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
-            const snapshot = await getDocs(articlesRef); 
-            if (snapshot.size === 0) {
+            // FIX: Only fetch 200 at a time to prevent crash
+            const q = query(articlesRef, limit(200));
+            const snapshot = await getDocs(q); 
+            
+            if (snapshot.empty) {
                 setImportStatus(null);
                 showNotification("All articles deleted.");
                 return;
             }
+            
             const batch = writeBatch(db);
-            let count = 0;
             snapshot.docs.forEach((doc) => {
-                if (count < 400) { 
-                    batch.delete(doc.ref);
-                    count++;
-                }
+                batch.delete(doc.ref);
             });
             await batch.commit();
-            if (snapshot.size > 400) deleteBatch();
-            else {
-               setImportStatus(null);
-               showNotification("All articles deleted.");
-            }
+            
+            setImportStatus(`Deleting... ${snapshot.size} removed.`);
+            // Recursive call with small delay to let UI breathe
+            setTimeout(deleteBatch, 50); 
         };
         await deleteBatch();
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories'), {});
         setDbCategoryCounts({});
+        setArticles([]); // Clear local view
     } catch(e) {
         console.error(e);
         showNotification("Deletion failed.");
+        setImportStatus(null);
     }
   };
 
@@ -1614,6 +1617,7 @@ function App() {
       r.readAsText(file);
   };
 
+  // --- FIXED: Import Logic (Batch Size + Pause/Resume) ---
   const runImport = async (pages) => {
       if(!db) return;
       let i = importCursorRef.current;
@@ -1621,67 +1625,57 @@ function App() {
       const limit = 100000;
       let batchCounts = {};
       
-      // OPTIMIZATION: Increased batch size from 10 to 400 for speed
-      const BATCH_SIZE = 400; 
+      // OPTIMIZATION: Decreased batch size to 50 to prevent 10MB payload error
+      const BATCH_SIZE = 50; 
       
       setImportStatus(`Importing ${i} / ${total}`);
       setImportProgress(0); 
       
       while(i < Math.min(total, limit)) {
-          if(abortImportRef.current) { setImportState('paused'); importCursorRef.current = i; return; }
+          if(abortImportRef.current) { 
+              setImportState('paused'); 
+              importCursorRef.current = i; 
+              setImportStatus(`Paused at ${i} / ${total}`);
+              return; 
+          }
+          
           const batch = writeBatch(db);
           let ops = 0;
           const chunk = Array.from(pages).slice(i, i+BATCH_SIZE); 
+          
           chunk.forEach(p => {
               const title = p.getElementsByTagName("title")[0]?.textContent;
               const rev = p.getElementsByTagName("revision")[0];
               const text = rev ? rev.getElementsByTagName("text")[0]?.textContent : "";
               if(title && text) {
-                  let clean = text.replace(/<!--[\s\S]*?-->/g, ""); // Remove comments
-                  clean = clean.replace(/\{\|[\s\S]*?\|\}/g, ""); // Remove tables (often messy)
-                  clean = clean.replace(/\[\[(File|Image):[^\]]*\]\]/gi, ""); // Remove images/files
-                  
-                  // NEW: Remove Categories from text body (they are metadata)
+                  let clean = text.replace(/<!--[\s\S]*?-->/g, ""); 
+                  clean = clean.replace(/\{\|[\s\S]*?\|\}/g, ""); 
+                  clean = clean.replace(/\[\[(File|Image):[^\]]*\]\]/gi, ""); 
                   clean = clean.replace(/\[\[Category:[^\]]+\]\]/gi, "");
-
-                  // NEW: Handle MediaWiki Bold and Italic
-                  clean = clean.replace(/'''(.+?)'''/g, "<b>$1</b>"); // Bold
-                  clean = clean.replace(/''(.+?)''/g, "<i>$1</i>"); // Italic
-                  
-                  // Remove duplicate title heading from content
+                  clean = clean.replace(/'''(.+?)'''/g, "<b>$1</b>");
+                  clean = clean.replace(/''(.+?)''/g, "<i>$1</i>");
                   const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                   const titleRegex = new RegExp(`^\\s*={2,}\\s*${escapedTitle}\\s*={2,}\\s*`, 'im');
                   clean = clean.replace(titleRegex, "");
-
-                  // Headings
                   clean = clean.replace(/={2,}\s*(.*?)\s*={2,}/g, (m,t) => `<h2 class="text-xl font-bold mt-4">${t}</h2>`);
-                  
-                  // Anchors
                   clean = clean.replace(/\[\[#([^|\]]+)(?:\|([^\]]+))?\]\]/g, (m,a,l) => `<span data-wiki-anchor="${a.trim()}" class="text-indigo-600 font-medium hover:underline cursor-pointer">${l||a}</span>`);
-                  
-                  // NEW: Improved Link Handling
-                  // Handles [[Article_Name]] -> converts to space-based title for lookup
-                  // Handles [[Article|Label]]
                   clean = clean.replace(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/g, (m,t,l) => {
-                      const target = t.trim().replace(/_/g, ' '); // Normalize underscores to spaces for navigation
-                      const label = l || target; // Use target as label if label is missing
+                      const target = t.trim().replace(/_/g, ' '); 
+                      const label = l || target; 
                       return `<span data-wiki-link="${target}" class="text-indigo-600 font-medium hover:underline cursor-pointer">${label}</span>`;
                   });
-
-                  // NEW: Handle Flat Text Formatting (Convert newlines to breaks for readability)
-                  // This is done LAST to preserve structure of any HTML we just inserted
                   clean = clean.replace(/\n/g, "<br/>");
                   
                   const catMatch = text.match(/\[\[Category:([^\]|]+)/i);
-                  const cat = catMatch ? catMatch[1].trim() : ""; // CHANGED: Default to empty string instead of "Imported"
-                  if (cat) {
-                    batchCounts[cat] = (batchCounts[cat] || 0) + 1; // Only count if valid category
-                  }
+                  const cat = catMatch ? catMatch[1].trim() : ""; 
+                  if (cat) batchCounts[cat] = (batchCounts[cat] || 0) + 1; 
+                  
                   const ref = doc(collection(db, 'artifacts', appId, 'public', 'data', 'articles'));
                   batch.set(ref, { title, category: cat, content: clean, lastUpdated: new Date().toISOString().split('T')[0], createdAt: serverTimestamp() });
                   ops++;
               }
           });
+          
           if(ops > 0) {
               try { 
                   await batch.commit(); 
@@ -1689,11 +1683,19 @@ function App() {
                   importCursorRef.current = i; 
                   setImportStatus(`Importing... ${i} / ${total}`);
                   setImportProgress(Math.min(100, Math.round((i / total) * 100)));
-                  // Reduced wait time slightly as batches are larger
+                  // Small delay to prevent freezing
                   await new Promise(r => setTimeout(r, 100)); 
-              } catch(e) { if(e.code === 'resource-exhausted') await new Promise(r => setTimeout(r, 10000)); else i += BATCH_SIZE; }
+              } catch(e) { 
+                  console.error("Import Batch Error:", e);
+                  if(e.code === 'resource-exhausted') {
+                      await new Promise(r => setTimeout(r, 5000)); // Longer wait if quota issues
+                  } else {
+                      i += BATCH_SIZE; // Skip bad batch if other error
+                  }
+              }
           } else { i += BATCH_SIZE; }
       }
+      
       try {
           const sRef = doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories');
           const snap = await getDoc(sRef);
@@ -2306,7 +2308,21 @@ function App() {
                                     <div className="flex justify-between mb-1"><span className="font-bold">{importStatus}</span><span>{importProgress}%</span></div>
                                     <div className="w-full bg-gray-100 dark:bg-slate-700 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{width: `${importProgress}%`}}></div></div>
                                 </div>
-                                {importState === 'completed' && <button onClick={()=>{setImportState('idle'); setImportProgress(0);}} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Import Another</button>}
+                                <div className="flex gap-2">
+                                    {importState === 'active' && (
+                                        <button onClick={() => { abortImportRef.current = true; }} className="bg-amber-500 text-white px-4 py-2 rounded hover:bg-amber-600 flex items-center gap-2">
+                                            <PauseCircle size={18}/> Pause
+                                        </button>
+                                    )}
+                                    {importState === 'paused' && (
+                                        <button onClick={() => { abortImportRef.current = false; setImportState('active'); runImport(pagesRef.current); }} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 flex items-center gap-2">
+                                            <PlayCircle size={18}/> Resume
+                                        </button>
+                                    )}
+                                    {importState === 'completed' && (
+                                        <button onClick={()=>{setImportState('idle'); setImportProgress(0);}} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Import Another</button>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>
