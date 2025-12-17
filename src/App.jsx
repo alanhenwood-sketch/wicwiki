@@ -966,7 +966,7 @@ function App() {
                   )}
                 </div>
               </div>
-              <FloatingNotesWidget article={selectedArticle} noteContent={notes[selectedArticle.id] || ''} onChange={(id, txt) => setNotes({...notes, [id]: txt})} onExport={() => {}} onShare={() => {}} visible={showNoteWidget} setVisible={setShowNoteWidget} theme={currentTheme} />
+              {/* Removed FloatingNotesWidget from here */}
           </div>
       );
   };
@@ -1256,6 +1256,21 @@ function App() {
          {view === 'notes' && renderNotesDashboard()}
          {view === 'admin' && renderAdmin()}
       </main>
+      
+      {/* Floating Widget Moved Here - OUTSIDE any transforms/animations */}
+      {view === 'article' && selectedArticle && (
+        <FloatingNotesWidget 
+            article={selectedArticle} 
+            noteContent={notes[selectedArticle.id] || ''} 
+            onChange={(id, txt) => handleNoteChange(id, txt)} 
+            onExport={() => exportNotes(false, selectedArticle.id)} 
+            onShare={() => handleShareNote(selectedArticle.id)} 
+            visible={showNoteWidget} 
+            setVisible={setShowNoteWidget} 
+            theme={currentTheme} 
+        />
+      )}
+
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } 
         .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
