@@ -9,7 +9,7 @@ import {
   Home, Library, PenSquare, FileInput, Sliders, Palette, Type as TypeIcon,
   ChevronLeft, ChevronsLeft, ChevronsRight, BarChart, Smartphone, ShieldCheck, ArrowLeft,
   Calendar, Megaphone, Clock, ExternalLink, Play, RefreshCw, Quote, MoreHorizontal,
-  PauseCircle, PlayCircle, XCircle
+  PauseCircle, PlayCircle, XCircle, Shuffle, TrendingUp
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -437,6 +437,7 @@ function App() {
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [limitCount, setLimitCount] = useState(50);
+  const [homeFilter, setHomeFilter] = useState('recent'); // 'recent', 'popular', 'random'
   
   // Settings
   const [siteTitle, setSiteTitle] = useState("Theologue");
@@ -680,7 +681,20 @@ function App() {
   };
 
   // --- Helpers ---
-  const handleArticleClick = (a) => { setPreviousView(view); setSelectedArticle(a); setView('article'); };
+  const handleArticleClick = async (a) => { 
+      setPreviousView(view); 
+      setSelectedArticle(a); 
+      setView('article');
+      
+      // Increment Views in Firestore (Simulated for speed, robust enough for this context)
+      if (db && a.id) {
+          try {
+              const ref = doc(db, 'artifacts', appId, 'public', 'data', 'articles', a.id);
+              await updateDoc(ref, { views: (a.views || 0) + 1 });
+          } catch(e) { console.error("View increment error:", e); }
+      }
+  };
+
   const handleBack = () => setView(previousView);
   const handleLogout = () => { setIsAuthenticated(false); setView('home'); };
   const showNotification = (msg) => { setNotification({message: msg}); setTimeout(()=>setNotification(null), 3000); };
@@ -1012,7 +1026,27 @@ function App() {
   };
 
   // --- Render Sections ---
-  const renderHome = () => (
+  const renderHome = () => {
+      // Logic for filtering home articles
+      const getHomeArticles = () => {
+          let sorted = [...articles];
+          if (homeFilter === 'recent') {
+              // Default is sorted by createdAt desc (from snapshot)
+              return sorted.slice(0, 5);
+          }
+          if (homeFilter === 'popular') {
+              return sorted.sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
+          }
+          if (homeFilter === 'random') {
+              // Simple shuffle for display
+              return sorted.sort(() => 0.5 - Math.random()).slice(0, 5);
+          }
+          return sorted.slice(0, 5);
+      };
+
+      const displayArticles = getHomeArticles();
+
+      return (
       <div className={`max-w-4xl mx-auto space-y-12 animate-fadeIn ${currentTheme.font} ${currentTheme.textSize}`}>
         {/* IMPROVED NOTIFICATION TICKER */}
         {notification && (
@@ -1079,19 +1113,56 @@ function App() {
                 ))}
             </div>
         </div>
+        
+        {/* RECENT ARTICLES SECTION with FILTER */}
         <div>
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><Tag size={18}/> Recent Articles</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
+                <h2 className="text-lg font-bold flex items-center gap-2"><Tag size={18}/> Articles</h2>
+                
+                {/* Filter Controls */}
+                <div className="flex bg-white rounded-lg p-1 shadow-sm border border-gray-200">
+                    <button 
+                        onClick={() => setHomeFilter('recent')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-1 transition-all ${homeFilter === 'recent' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 hover:text-gray-900'}`}
+                    >
+                        <Clock size={14}/> Recent
+                    </button>
+                    <button 
+                        onClick={() => setHomeFilter('popular')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-1 transition-all ${homeFilter === 'popular' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 hover:text-gray-900'}`}
+                    >
+                        <TrendingUp size={14}/> Popular
+                    </button>
+                    <button 
+                        onClick={() => setHomeFilter('random')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-1 transition-all ${homeFilter === 'random' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 hover:text-gray-900'}`}
+                    >
+                        <Shuffle size={14}/> Random
+                    </button>
+                </div>
+            </div>
+
             <div className="space-y-4">
-                {articles.slice(0,5).map(a => (
-                    <div key={a.id} onClick={()=>handleArticleClick(a)} className="p-4 bg-white rounded-xl border hover:bg-gray-50 cursor-pointer flex justify-between items-center">
-                        <div><h4 className="font-medium text-gray-900">{a.title}</h4><p className="text-xs text-gray-500">{a.category}</p></div>
-                        <ChevronRight size={16} className="text-gray-400"/>
+                {displayArticles.map(a => (
+                    <div key={a.id} onClick={()=>handleArticleClick(a)} className="p-4 bg-white rounded-xl border hover:bg-gray-50 cursor-pointer flex justify-between items-center group transition-colors">
+                        <div>
+                            <h4 className="font-medium text-gray-900 group-hover:text-indigo-600 transition-colors">{a.title}</h4>
+                            <div className="flex items-center gap-3 mt-1">
+                                <span className="text-xs text-gray-500">{a.category}</span>
+                                {a.views > 0 && <span className="text-xs text-gray-400 flex items-center gap-1"><TrendingUp size={10}/> {a.views} views</span>}
+                            </div>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-400 group-hover:text-indigo-500 transition-colors"/>
                     </div>
                 ))}
+                {displayArticles.length === 0 && (
+                    <div className="text-center py-8 text-gray-400 text-sm">No articles available.</div>
+                )}
             </div>
         </div>
       </div>
   );
+  };
 
   const renderSearch = () => (
     <div className={`max-w-5xl mx-auto ${currentTheme.font}`}>
