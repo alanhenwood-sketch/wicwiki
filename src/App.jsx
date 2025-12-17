@@ -1469,7 +1469,8 @@ function App() {
       <header className="sticky top-0 bg-white border-b z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
            <div className="flex items-center gap-2 font-bold text-xl cursor-pointer" onClick={()=>setView('home')}>
-             {siteLogo ? <img src={siteLogo} alt={siteTitle} className="h-10 object-contain" /> : <><Book/> {siteTitle}</>}
+             {/* INCREASED LOGO SIZE: Changed h-10 to h-14 */}
+             {siteLogo ? <img src={siteLogo} alt={siteTitle} className="h-14 object-contain" /> : <><Book/> {siteTitle}</>}
            </div>
            <nav className="flex gap-4">
                <NavItem icon={Layout} label="Home" active={view==='home'} onClick={()=>setView('home')} theme={currentTheme} />
