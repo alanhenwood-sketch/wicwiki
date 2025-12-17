@@ -10,10 +10,10 @@ import {
   ChevronLeft, ChevronsLeft, ChevronsRight, BarChart, Smartphone, ShieldCheck, ArrowLeft,
   Calendar, Megaphone, Clock, ExternalLink, Play, RefreshCw, Quote, MoreHorizontal,
   PauseCircle, PlayCircle, XCircle, Shuffle, TrendingUp, ArrowUpAZ, ArrowDownAZ,
-  ArrowUp, ArrowDown, BookOpen
+  ArrowUp, ArrowDown, BookOpen, Bot
 } from 'lucide-react';
 
-// --- Firebase Imports ---
+// --- Firebase Imports (Fixed) ---
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -510,6 +510,175 @@ const FloatingNotesWidget = ({ article, noteContent, onChange, onExport, onShare
          </div>
        </div>
        <textarea className={`flex-1 w-full bg-white/50 p-4 text-sm text-gray-800 leading-relaxed focus:outline-none resize-none font-medium placeholder-yellow-800/30 ${theme.font}`} placeholder="Jot down your thoughts here..." value={noteContent} onChange={(e) => onChange(article.id, e.target.value)} autoFocus></textarea>
+    </div>
+  );
+};
+
+// --- AI Librarian Widget (New) ---
+const AiLibrarianWidget = ({ articles, navigateTo }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [response, setResponse] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSearch = async () => {
+    if (!query.trim()) return;
+    if (articles.length === 0) {
+        setResponse([]); // No articles to search
+        setLoading(false);
+        return;
+    }
+    setLoading(true);
+    setResponse(null);
+
+    try {
+      const apiKey = GEMINI_API_KEY;
+      if (apiKey === "PASTE_YOUR_GEMINI_API_KEY_HERE" || !apiKey) {
+        setResponse({ error: "API Key Config Needed" });
+        setLoading(false);
+        return;
+      }
+
+      // Simplified list for token efficiency
+      const articleSummary = articles.map(a => ({ id: a.id, title: a.title, category: a.category || "Uncategorized" }));
+      
+      const prompt = `
+        You are a theological research librarian. User Query: "${query}".
+        Library: ${JSON.stringify(articleSummary)}.
+        
+        Task: Identify the top 3-5 articles from the library that best answer the query. Use semantic understanding (e.g. "healing" might match "miracles" or "faith").
+        Return ONLY a JSON array of the article IDs, ranked by relevance. Example: ["id1", "id2"].
+        If no relevant articles found, return empty array [].
+      `;
+
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            contents: [{ parts: [{ text: prompt }] }],
+            // Add safety settings to prevent blocking
+            safetySettings: [
+                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+            ]
+        })
+      });
+
+      const data = await res.json();
+      
+      // Better error logging
+      if (data.error) {
+          console.error("Gemini API Error:", data.error);
+          throw new Error(data.error.message || "API Error");
+      }
+
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!rawText) {
+          console.error("Unexpected API Response:", data);
+          throw new Error("No response text from AI");
+      }
+      
+      // Parse JSON from text (handle potential markdown code blocks)
+      const jsonStr = rawText.replace(/```json|```/g, '').trim();
+      const ids = JSON.parse(jsonStr);
+
+      const matchedArticles = ids.map(id => articles.find(a => a.id === id)).filter(Boolean);
+      setResponse(matchedArticles);
+
+    } catch (e) {
+      console.error(e);
+      setResponse([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) {
+    return (
+      <button 
+        onClick={() => setIsOpen(true)}
+        className="fixed bottom-6 left-6 z-50 p-4 rounded-full shadow-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-transform hover:scale-105 flex items-center justify-center"
+        title="Ask the Librarian"
+      >
+        <Bot size={28} />
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed bottom-6 left-6 z-50 w-80 md:w-96 bg-white rounded-2xl shadow-2xl border border-indigo-100 flex flex-col h-[500px] overflow-hidden animate-slideUp">
+      {/* Header */}
+      <div className="bg-indigo-600 p-4 flex justify-between items-center text-white">
+        <div className="flex items-center gap-2">
+          <Bot size={20} />
+          <span className="font-bold">Librarian AI</span>
+        </div>
+        <button onClick={() => setIsOpen(false)} className="hover:bg-indigo-700 p-1 rounded"><Minimize2 size={18} /></button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 p-4 overflow-y-auto bg-gray-50 flex flex-col gap-3">
+        <div className="bg-indigo-100 p-3 rounded-lg rounded-tl-none self-start text-sm text-indigo-900 max-w-[85%]">
+          Hello! I can help you find specific articles in the library. What are you looking for?
+        </div>
+        
+        {/* User Query Display (Optional, skipping for simplicity to keep it clean) */}
+        
+        {loading && (
+           <div className="self-center my-4 flex flex-col items-center gap-2 text-gray-400 text-xs">
+             <Loader className="animate-spin" size={20} />
+             <span>Searching the archives...</span>
+           </div>
+        )}
+
+        {response && (
+           <div className="flex flex-col gap-2 animate-fadeIn">
+              {response.length > 0 ? (
+                  <>
+                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Found {response.length} results</div>
+                    {response.map(a => (
+                        <div 
+                            key={a.id} 
+                            onClick={() => navigateTo('article', a)}
+                            className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:border-indigo-300 hover:shadow-md cursor-pointer transition-all"
+                        >
+                            <div className="font-bold text-indigo-700 text-sm mb-1">{a.title}</div>
+                            <div className="text-xs text-gray-500">{a.category || "Uncategorized"}</div>
+                        </div>
+                    ))}
+                  </>
+              ) : (
+                  <div className="text-sm text-gray-500 italic text-center p-4">
+                      I couldn't find any articles matching that description. Try different keywords?
+                  </div>
+              )}
+           </div>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="p-3 bg-white border-t border-gray-100">
+        <div className="relative">
+          <input 
+            type="text" 
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            placeholder="e.g. 'verses about healing'"
+            className="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          <button 
+            onClick={handleSearch}
+            disabled={!query.trim() || loading}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Send size={16} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
@@ -1280,7 +1449,8 @@ function App() {
       const displayArticles = getHomeArticles();
 
       // Placeholder Replacement Logic for Description
-      const processedDescription = siteDescription.replace('{{count}}', articles.length);
+      const descriptionText = typeof siteDescription === 'string' ? siteDescription : "";
+      const processedDescription = descriptionText.replace('{{count}}', articles.length);
 
       return (
       <div className={`max-w-4xl mx-auto space-y-12 animate-fadeIn ${currentTheme.font} ${currentTheme.textSize}`}>
@@ -1300,7 +1470,7 @@ function App() {
                {/* MODIFIED: Show text title here instead of logo, even if logo is set */}
                {siteTitle}
             </h1>
-            <div className="max-w-2xl mx-auto mb-8 px-4">
+            <div className="w-full mb-8 px-4">
               <div className={`relative rounded-2xl ${currentTheme.colors.bgSoft} border ${currentTheme.colors.border} shadow-sm text-center transition-all duration-300 ${isWelcomeMinimized ? 'p-4' : 'p-6'}`}>
                 <button 
                   onClick={() => setIsWelcomeMinimized(!isWelcomeMinimized)}
@@ -1327,12 +1497,13 @@ function App() {
                 )}
               </div>
             </div>
-            <form onSubmit={e => {e.preventDefault(); setView('search');}} className="relative max-w-lg mx-auto">
-                <input className="w-full pl-12 pr-4 py-4 rounded-xl border shadow-sm" placeholder="Search library..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"/>
-            </form>
         </div>
         <VerseOfTheDayWidget />
+        <form onSubmit={e => {e.preventDefault(); setView('search');}} className="relative max-w-lg mx-auto mb-8">
+            <input className="w-full pl-12 pr-4 py-4 rounded-xl border shadow-sm" placeholder="Search library..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"/>
+        </form>
+
         {activeSections.length > 0 && <div className="space-y-8">{activeSections.map(s => <div key={s.id} className="bg-white p-8 rounded-xl shadow-sm border"><HtmlContentRenderer html={s.content} theme={currentTheme} onNavigate={()=>{}}/></div>)}</div>}
         <div>
             <div className="flex items-center justify-between mb-4">
@@ -1886,11 +2057,12 @@ function App() {
         </div>
       )}
 
+      {/* Persistent AI Librarian Widget */}
+      <AiLibrarianWidget articles={articles} navigateTo={navigateTo} />
+
       <header className="sticky top-0 bg-white border-b z-50">
-        {/* INCREASED HEADER HEIGHT: Changed h-16 to h-24 to accommodate larger logo */}
         <div className="max-w-7xl mx-auto px-4 h-24 flex items-center justify-between">
            <div className="flex items-center gap-2 font-bold text-xl cursor-pointer" onClick={()=>handleNavClick('home')}>
-             {/* INCREASED LOGO SIZE: Changed h-14 to h-20 */}
              {siteLogo ? <img src={siteLogo} alt={siteTitle} className="h-20 object-contain" /> : <><Book/> {siteTitle}</>}
            </div>
            <nav className="flex gap-4">
@@ -1926,6 +2098,8 @@ function App() {
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } 
         .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-slideUp { animation: slideUp 0.3s ease-out forwards; }
       `}</style>
     </div>
   );
