@@ -206,10 +206,83 @@ const VerseTooltip = ({ reference, theme }) => {
   );
 };
 
-// --- HTML Renderer (Verse Regex & Style Fix) ---
+// --- HTML Renderer (Verse Strict Fix & Style) ---
 const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
-  // STRICTER Regex: Matches Book Chapter:Verse, avoiding random text
-  const verseRegex = /(\b(?:[123I]{1,2}\s+)?[A-Z][a-z]+(?:\s+of\s+[A-Z][a-z]+)?(?:\s+[A-Z][a-z]+)?\s+\d+:\d+(?:[-–,]\d+)*\b)/g;
+  // VERY STRICT BIBLE REGEX: Whitelist Only + Abbreviations
+  const books = [
+    "Genesis", "Gen", "Ge", "Gn",
+    "Exodus", "Ex", "Exod",
+    "Leviticus", "Lev", "Le", "Lv",
+    "Numbers", "Num", "Nu", "Nm", "Nb",
+    "Deuteronomy", "Deut", "De", "Dt",
+    "Joshua", "Josh", "Jos", "Jsh",
+    "Judges", "Judg", "Jdg", "Jg", "Jdgs",
+    "Ruth", "Rth", "Ru",
+    "1 Samuel", "1 Sam", "1 Sa", "1Sm", "1S", "I Samuel", "I Sam", "I Sa",
+    "2 Samuel", "2 Sam", "2 Sa", "2Sm", "2S", "II Samuel", "II Sam", "II Sa",
+    "1 Kings", "1 Kgs", "1 Ki", "1K", "I Kings", "I Kgs", "I Ki",
+    "2 Kings", "2 Kgs", "2 Ki", "2K", "II Kings", "II Kgs", "II Ki",
+    "1 Chronicles", "1 Chron", "1 Chr", "1 Ch", "I Chronicles", "I Chron", "I Chr",
+    "2 Chronicles", "2 Chron", "2 Chr", "2 Ch", "II Chronicles", "II Chron", "II Chr",
+    "Ezra", "Ezr",
+    "Nehemiah", "Neh", "Ne",
+    "Esther", "Esth", "Est", "Es",
+    "Job", "Jb",
+    "Psalms?", "Ps", "Psa", "Psm", "Pss",
+    "Proverbs", "Prov", "Pro", "Prv", "Pr",
+    "Ecclesiastes", "Eccl", "Eccles", "Ecc", "Ec", "Qoh",
+    "Song of Solomon", "Song of Songs", "Song", "So", "Canticles", "Cant",
+    "Isaiah", "Isa", "Is",
+    "Jeremiah", "Jer", "Je", "Jr",
+    "Lamentations", "Lam", "La",
+    "Ezekiel", "Ezek", "Eze", "Ezk",
+    "Daniel", "Dan", "Da", "Dn",
+    "Hosea", "Hos", "Ho",
+    "Joel", "Jl",
+    "Amos", "Am",
+    "Obadiah", "Obad", "Ob",
+    "Jonah", "Jon", "Jnh",
+    "Micah", "Mic", "Mc",
+    "Nahum", "Nah", "Na",
+    "Habakkuk", "Hab", "Hb",
+    "Zephaniah", "Zeph", "Zep", "Zp",
+    "Haggai", "Hag", "Hg",
+    "Zechariah", "Zech", "Zec", "Zc",
+    "Malachi", "Mal", "Ml",
+    
+    // New Testament
+    "Matthew", "Matt", "Mt", "Mtt",
+    "Mark", "Mrk", "Mk", "Mr",
+    "Luke", "Luk", "Lk",
+    "John", "Jhn", "Jn",
+    "Acts", "Ac",
+    "Romans", "Rom", "Ro", "Rm",
+    "1 Corinthians", "1 Cor", "1 Co", "I Corinthians", "I Cor", "I Co",
+    "2 Corinthians", "2 Cor", "2 Co", "II Corinthians", "II Cor", "II Co",
+    "Galatians", "Gal", "Ga",
+    "Ephesians", "Eph", "Ep",
+    "Philippians", "Phil", "Php", "Pp",
+    "Colossians", "Col", "Co",
+    "1 Thessalonians", "1 Thess", "1 Th", "I Thessalonians", "I Thess", "I Th",
+    "2 Thessalonians", "2 Thess", "2 Th", "II Thessalonians", "II Thess", "II Th",
+    "1 Timothy", "1 Tim", "1 Ti", "I Timothy", "I Tim", "I Ti",
+    "2 Timothy", "2 Tim", "2 Ti", "II Timothy", "II Tim", "II Ti",
+    "Titus", "Tit", "Ti",
+    "Philemon", "Philem", "Phm", "Pm",
+    "Hebrews", "Heb",
+    "James", "Jas", "Jm",
+    "1 Peter", "1 Pet", "1 Pe", "1 Pt", "I Peter", "I Pet", "I Pe",
+    "2 Peter", "2 Pet", "2 Pe", "2 Pt", "II Peter", "II Pet", "II Pe",
+    "1 John", "1 Jn", "1 J", "I John", "I Jn",
+    "2 John", "2 Jn", "2 J", "II John", "II Jn",
+    "3 John", "3 Jn", "3 J", "III John", "III Jn",
+    "Jude", "Jd",
+    "Revelation", "Rev", "Rv"
+  ];
+  
+  const sortedBooks = books.sort((a,b) => b.length - a.length).join("|");
+  // Matches: [Boundary][Book Name][Spaces][Chapter]:[Verse][Optional Range][Boundary]
+  const verseRegex = new RegExp(`(\\b(?:${sortedBooks})\\s+\\d+:\\d+(?:[-–,]\\d+)*\\b)`, 'gi');
   
   const renderNodes = (nodes) => Array.from(nodes).map((node, i) => {
       if (node.nodeType === 3) {
@@ -234,18 +307,10 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
         if (['script','style'].includes(tagName)) return null;
         const props = { key: i };
         
-        // FIX: Robust attribute handling
         if (node.attributes) Array.from(node.attributes).forEach(attr => { 
-            // PREVENT CRASH: Skip 'style' attribute which causes React Error #62 if passed as string
+            // PREVENT CRASH: Skip 'style' attribute
             if (attr.name === 'style') return;
-            
-            // Map class to className for React
-            if (attr.name === 'class') {
-                props.className = attr.value;
-                return;
-            }
-            
-            // Allow other valid attributes
+            if (attr.name === 'class') { props.className = attr.value; return; }
             if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; 
         });
 
@@ -379,6 +444,7 @@ function App() {
   const [siteTextColor, setSiteTextColor] = useState("gray");
   const [siteFont, setSiteFont] = useState("sans");
   const [siteTextSize, setSiteTextSize] = useState("base");
+  const [categoryStyle, setCategoryStyle] = useState("gradient"); // 'gradient' or 'image'
   const [imageSeed, setImageSeed] = useState(0);
   const [siteLogo, setSiteLogo] = useState(null);
   
@@ -459,6 +525,7 @@ function App() {
             if(d.color) setSiteColor(d.color);
             if(d.font) setSiteFont(d.font);
             if(d.logo) setSiteLogo(d.logo);
+            if(d.categoryStyle) setCategoryStyle(d.categoryStyle);
         }
     });
 
@@ -519,19 +586,61 @@ function App() {
 
   const getCategoryImage = (cat) => {
       if(!cat) return "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)";
-      let hash = 0;
-      for (let i = 0; i < cat.length; i++) hash = cat.charCodeAt(i) + ((hash << 5) - hash);
-      const styles = [
-        "linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%)",
-        "linear-gradient(135deg, #10b981 0%, #064e3b 100%)",
-        "linear-gradient(135deg, #f59e0b 0%, #78350f 100%)",
-        "linear-gradient(135deg, #8b5cf6 0%, #4c1d95 100%)",
-        "linear-gradient(135deg, #ec4899 0%, #831843 100%)",
-        "linear-gradient(135deg, #6366f1 0%, #312e81 100%)",
-        "linear-gradient(to right, #243949 0%, #517fa4 100%)",
-        "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)",
-      ];
-      return styles[Math.abs(hash) % styles.length];
+      
+      // OPTION 1: Gradient Mode (Default)
+      if (categoryStyle === 'gradient') {
+          let hash = 0;
+          for (let i = 0; i < cat.length; i++) hash = cat.charCodeAt(i) + ((hash << 5) - hash);
+          const styles = [
+            "linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%)", // Blue
+            "linear-gradient(135deg, #10b981 0%, #064e3b 100%)", // Emerald
+            "linear-gradient(135deg, #f59e0b 0%, #78350f 100%)", // Amber
+            "linear-gradient(135deg, #8b5cf6 0%, #4c1d95 100%)", // Violet
+            "linear-gradient(135deg, #ec4899 0%, #831843 100%)", // Pink
+            "linear-gradient(135deg, #6366f1 0%, #312e81 100%)", // Indigo
+            "linear-gradient(to right, #243949 0%, #517fa4 100%)", // Steel
+            "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)", // Deep Purple
+          ];
+          return styles[Math.abs(hash) % styles.length];
+      }
+
+      // OPTION 2: Dynamic Image Mode
+      // Curated list of theological/library style images
+      const images = {
+          bible: "https://images.unsplash.com/photo-1491841550275-ad7854e35ca6?auto=format&fit=crop&w=800&q=80", // Open Bible
+          church: "https://images.unsplash.com/photo-1548625149-fc4a29cf7092?auto=format&fit=crop&w=800&q=80", // Church Interior
+          cross: "https://images.unsplash.com/photo-1507646870321-df8b26bc43c2?auto=format&fit=crop&w=800&q=80", // Cross
+          history: "https://images.unsplash.com/photo-1461360370896-922624d12aa1?auto=format&fit=crop&w=800&q=80", // Old Book/History
+          sky: "https://images.unsplash.com/photo-1504052434569-70ad5836ab65?auto=format&fit=crop&w=800&q=80", // Sky/Light
+          nature: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=800&q=80", // Nature
+          library: "https://images.unsplash.com/photo-1507842217121-9e691b2d0941?auto=format&fit=crop&w=800&q=80", // Library
+          scroll: "https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=800&q=80", // Scroll/Parchment
+          candles: "https://images.unsplash.com/photo-1602607303737-b1c1d9a20274?auto=format&fit=crop&w=800&q=80", // Candles
+          community: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80", // People
+      };
+
+      const catLower = cat.toLowerCase();
+      let selectedImage = images.library; // Default
+
+      // Keywords Mapping
+      if (catLower.includes('bibl') || catLower.includes('scripture') || catLower.includes('testament')) selectedImage = images.bible;
+      else if (catLower.includes('church') || catLower.includes('cathedral') || catLower.includes('chapel')) selectedImage = images.church;
+      else if (catLower.includes('jesus') || catLower.includes('christ') || catLower.includes('cross') || catLower.includes('salvation')) selectedImage = images.cross;
+      else if (catLower.includes('history') || catLower.includes('ancient') || catLower.includes('old') || catLower.includes('archaeology')) selectedImage = images.history;
+      else if (catLower.includes('god') || catLower.includes('spirit') || catLower.includes('heaven') || catLower.includes('creation') || catLower.includes('prayer')) selectedImage = images.sky;
+      else if (catLower.includes('nature') || catLower.includes('world') || catLower.includes('earth')) selectedImage = images.nature;
+      else if (catLower.includes('scroll') || catLower.includes('manuscript') || catLower.includes('text')) selectedImage = images.scroll;
+      else if (catLower.includes('light') || catLower.includes('hope') || catLower.includes('advent')) selectedImage = images.candles;
+      else if (catLower.includes('people') || catLower.includes('women') || catLower.includes('men') || catLower.includes('community') || catLower.includes('mission')) selectedImage = images.community;
+      else {
+          // Dynamic Fallback for unknown categories: consistently map to one of the high-quality images based on name
+          const fallbackList = Object.values(images);
+          let hash = 0;
+          for (let i = 0; i < cat.length; i++) hash = cat.charCodeAt(i) + ((hash << 5) - hash);
+          selectedImage = fallbackList[Math.abs(hash) % fallbackList.length];
+      }
+
+      return `url(${selectedImage})`;
   };
 
   // --- Helpers ---
@@ -587,7 +696,8 @@ function App() {
               description: siteDescription,
               color: siteColor,
               font: siteFont,
-              logo: siteLogo
+              logo: siteLogo,
+              categoryStyle: categoryStyle // SAVE NEW SETTING
           });
           showNotification("Settings Saved!");
       } catch(e) { console.error(e); showNotification("Failed to save settings"); }
@@ -905,12 +1015,14 @@ function App() {
         <VerseOfTheDayWidget />
         {activeSections.length > 0 && <div className="space-y-8">{activeSections.map(s => <div key={s.id} className="bg-white p-8 rounded-xl shadow-sm border"><HtmlContentRenderer html={s.content} theme={currentTheme} onNavigate={()=>{}}/></div>)}</div>}
         <div>
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold flex items-center gap-2"><BarChart size={18}/> Popular Categories</h2>
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {/* FIX: Map directly over the array, do NOT use Object.entries on an array */}
                 {categoryStats.map(([cat, n]) => (
-                    <div key={cat} onClick={()=>{setActiveCategory(cat); setSearchQuery(""); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ background: getCategoryImage(cat), backgroundSize: 'cover' }}>
-                        <div className="absolute inset-0 bg-black/10 hover:bg-black/0 transition-colors"></div>
+                    <div key={cat} onClick={()=>{setActiveCategory(cat); setSearchQuery(""); setView('search'); setLimitCount(50);}} className="relative p-4 bg-white rounded-xl border cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ background: getCategoryImage(cat), backgroundSize: 'cover', backgroundPosition: 'center' }}>
+                        <div className={`absolute inset-0 transition-colors ${categoryStyle === 'image' ? 'bg-black/40 hover:bg-black/30' : 'bg-black/10 hover:bg-black/0'}`}></div>
                         <div className="relative z-10 text-white font-bold text-lg leading-tight p-2 drop-shadow-md break-words">{cat}</div>
                         <div className="relative z-10 self-end p-2">
                             <span className="text-xs font-medium text-white bg-black/40 px-2 py-1 rounded-full backdrop-blur-md border border-white/20 shadow-sm">{n} Articles</span>
@@ -1238,6 +1350,31 @@ function App() {
                                         <button key={c} onClick={() => setSiteColor(c)} className={`px-3 py-1 border rounded capitalize ${siteColor === c ? 'bg-gray-200 border-gray-500' : ''}`}>{c}</button>
                                     ))}
                                 </div>
+                            </div>
+
+                            {/* NEW: Category Style Selector */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Category Card Style</label>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => setCategoryStyle('gradient')} 
+                                        className={`px-4 py-2 border rounded font-medium flex items-center gap-2 ${categoryStyle === 'gradient' ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-white hover:bg-gray-50'}`}
+                                    >
+                                        <Palette size={16}/> Gradients
+                                    </button>
+                                    <button 
+                                        onClick={() => setCategoryStyle('image')} 
+                                        className={`px-4 py-2 border rounded font-medium flex items-center gap-2 ${categoryStyle === 'image' ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-white hover:bg-gray-50'}`}
+                                    >
+                                        <ImageIcon size={16}/> Dynamic Images
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    {categoryStyle === 'gradient' 
+                                        ? "Uses colorful abstract gradients for category backgrounds." 
+                                        : "Uses curated theological images based on category keywords (Bible, Church, History, etc.)."
+                                    }
+                                </p>
                             </div>
 
                             <div className="pt-4 border-t flex gap-2">
