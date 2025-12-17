@@ -206,7 +206,7 @@ const VerseTooltip = ({ reference, theme }) => {
   );
 };
 
-// --- HTML Renderer (Verse Regex Fix) ---
+// --- HTML Renderer (Verse Regex & Style Fix) ---
 const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
   // STRICTER Regex: Matches Book Chapter:Verse, avoiding random text
   const verseRegex = /(\b(?:[123I]{1,2}\s+)?[A-Z][a-z]+(?:\s+of\s+[A-Z][a-z]+)?(?:\s+[A-Z][a-z]+)?\s+\d+:\d+(?:[-–,]\d+)*\b)/g;
@@ -233,7 +233,21 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
         const tagName = node.tagName.toLowerCase();
         if (['script','style'].includes(tagName)) return null;
         const props = { key: i };
-        if (node.attributes) Array.from(node.attributes).forEach(attr => { if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; });
+        
+        // FIX: Robust attribute handling
+        if (node.attributes) Array.from(node.attributes).forEach(attr => { 
+            // PREVENT CRASH: Skip 'style' attribute which causes React Error #62 if passed as string
+            if (attr.name === 'style') return;
+            
+            // Map class to className for React
+            if (attr.name === 'class') {
+                props.className = attr.value;
+                return;
+            }
+            
+            // Allow other valid attributes
+            if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; 
+        });
 
         let baseClass = props.className || '';
         if (tagName === 'p') baseClass += ' mb-6 leading-relaxed text-gray-800 text-base md:text-lg';
