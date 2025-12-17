@@ -717,7 +717,7 @@ function App() {
       e.preventDefault();
       setLoginError("");
       if(loginStep === "password") {
-          if(passwordInput === "admin123") { setLoginStep('mfa'); showNotification("Code: Accepted"); }
+          if(passwordInput === "Tabletennis@123") { setLoginStep('mfa'); showNotification("Code: Accepted"); }
           else setLoginError("Incorrect password");
       } else {
           if(mfaInput === "123456") { setIsAuthenticated(true); setPasswordInput(""); setMfaInput(""); setLoginStep('password'); }
