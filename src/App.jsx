@@ -362,7 +362,6 @@ const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
   ];
   
   const sortedBooks = books.sort((a,b) => b.length - a.length).join("|");
-  // Updated Regex: Allows for an optional dot \.? after the book name before the space
   const verseRegex = new RegExp(`(\\b(?:${sortedBooks})\\.?\\s+\\d+:\\d+(?:[-–,]\\d+)*\\b)`, 'gi');
   
   const youtubeRegex = /\b(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:\S+)?/g;
@@ -548,7 +547,8 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
       }
 
       // Simplified list for token efficiency. Limit content snippet size to keep it fast.
-      const articleSummary = articles.map(a => ({ 
+      // Limit to 500 items for context to prevent payload too large errors
+      const articleSummary = articles.slice(0, 500).map(a => ({ 
           id: a.id, 
           title: a.title, 
           category: a.category || "Uncategorized",
@@ -891,13 +891,19 @@ function App() {
       showNotification("Loading full library index...");
       try {
           const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
-          const snap = await getDocs(articlesRef);
+          
+          // SAFETY LIMIT: Only load 2000 to prevent crash on 80k docs
+          const q = query(articlesRef, orderBy("createdAt", "desc"), limit(2000));
+          
+          const snap = await getDocs(q);
           let fetched = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          fetched.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+          
           setArticles(fetched);
           setIsLibraryLoaded(true);
+          showNotification(`Loaded ${fetched.length} articles.`);
       } catch (e) {
           console.error("Failed to load library:", e);
+          showNotification("Error loading library");
       } finally {
           setIsLoading(false);
       }
@@ -958,7 +964,7 @@ function App() {
     }
     if (searchQuery) {
         const lower = searchQuery.toLowerCase();
-        result = result.filter(a => a.title.toLowerCase().includes(lower) || a.content.toLowerCase().includes(lower));
+        result = result.filter(a => (a.title || "").toLowerCase().includes(lower) || (a.content || "").toLowerCase().includes(lower));
     }
     return result;
   }, [articles, searchQuery, activeCategory]);
@@ -1756,7 +1762,47 @@ function App() {
       );
   };
 
-  // ... (renderNotesDashboard and renderAdmin methods remain the same with lazy load checks)
+  const renderNotesDashboard = () => (
+      <div className="max-w-4xl mx-auto">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+                <h2 className="text-2xl font-bold">My Notes</h2>
+                <div className="text-sm text-amber-700 bg-amber-50 px-3 py-1 rounded-full inline-flex items-center gap-2 mt-2 border border-amber-200">
+                    <AlertTriangle size={14}/> Warning: Notes are cleared when you close the tab.
+                </div>
+            </div>
+            {Object.keys(notes).length > 0 && (
+                <button onClick={() => exportNotes(true)} className="flex items-center gap-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg font-bold hover:bg-yellow-200 transition-colors">
+                    <Download size={18}/> Export All
+                </button>
+            )}
+          </div>
+          <div className="grid gap-4">
+              {Object.entries(notes).map(([id, text]) => {
+                  const article = articles.find(a => a.id === id);
+                  const title = article ? article.title : `Unknown Article (ID: ${id})`;
+
+                  return (
+                    <div key={id} className="p-4 bg-yellow-50 rounded-xl border border-yellow-200 hover:shadow-sm transition-shadow">
+                        <div className="flex justify-between items-start mb-2">
+                           <div className="font-bold text-yellow-900 text-lg flex items-center gap-2">
+                              <StickyNote size={16} className="text-yellow-700" />
+                              {title}
+                           </div>
+                           {article && (
+                             <button onClick={() => navigateTo('article', article)} className="text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-3 py-1 rounded-full font-medium transition-colors">
+                               View Article
+                             </button>
+                           )}
+                        </div>
+                        <div className="whitespace-pre-wrap text-sm text-gray-700 border-t border-yellow-100 pt-2 mt-2">{text}</div>
+                    </div>
+                  );
+              })}
+              {Object.keys(notes).length === 0 && <div className="text-center py-20 text-gray-400">No notes yet.</div>}
+          </div>
+      </div>
+  );
 
   const renderAdmin = () => {
     if(!isAuthenticated) return (
@@ -1770,6 +1816,35 @@ function App() {
         </div>
     );
 
+    // PAGINATION & SORTING LOGIC (With Safety Checks)
+    let processedArticles = articles.filter(a => (a.title || "").toLowerCase().includes(adminSearchQuery.toLowerCase()));
+    
+    // Sort logic
+    if (adminSortBy === 'title') {
+        processedArticles.sort((a, b) => adminSortDirection === 'asc' 
+            ? (a.title || "").localeCompare(b.title || "") 
+            : (b.title || "").localeCompare(a.title || ""));
+    } else if (adminSortBy === 'category') {
+        processedArticles.sort((a, b) => {
+             const catA = a.category || "";
+             const catB = b.category || "";
+             const comparison = catA.localeCompare(catB);
+             return adminSortDirection === 'asc' ? comparison : -comparison;
+        });
+    } else {
+        // Date sort (default)
+        processedArticles.sort((a, b) => {
+            const dateA = a.createdAt?.seconds || 0;
+            const dateB = b.createdAt?.seconds || 0;
+            return adminSortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+        });
+    }
+
+    const indexOfLastItem = adminPage * adminPageSize;
+    const indexOfFirstItem = indexOfLastItem - adminPageSize;
+    const paginatedArticles = processedArticles.slice(indexOfFirstItem, indexOfLastItem);
+    const totalPages = Math.ceil(processedArticles.length / adminPageSize);
+
     return (
         <div className="max-w-6xl mx-auto flex gap-8">
             <div className="w-64 space-y-2">
@@ -1781,16 +1856,206 @@ function App() {
                 <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg text-red-600 hover:bg-red-50 w-full"><LogOut size={18}/> Logout</button>
             </div>
             <div className="flex-1 bg-white p-8 rounded-xl border">
-                {/* ... other admin tabs ... */}
-                
+                {adminTab === 'create' && (
+                    <div>
+                        <h2 className="text-xl font-bold mb-4">Create New Article</h2>
+                        <input className="w-full mb-4 p-2 border rounded" placeholder="Title" value={editorTitle} onChange={e=>setEditorTitle(e.target.value)} />
+                        <div className="relative mb-4">
+                          <input className="w-full p-2 border rounded" placeholder="Category" value={editorCategory} onChange={e=>setEditorCategory(e.target.value)} onFocus={() => setShowCategorySuggestions(true)} onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 200)} />
+                          {showCategorySuggestions && (
+                            <div className="absolute z-10 w-full bg-white border border-gray-200 rounded shadow-lg max-h-48 overflow-y-auto">
+                              {categories.filter(c => c.toLowerCase().includes(editorCategory.toLowerCase())).map(c => (
+                                <div key={c} className="p-2 hover:bg-gray-100 cursor-pointer" onClick={() => setEditorCategory(c)}>{c}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <RichTextEditor content={editorContent} onChange={setEditorContent} theme={currentTheme} />
+                        <button onClick={handleSaveArticle} className="mt-4 px-4 py-2 bg-green-600 text-white rounded">Save</button>
+                    </div>
+                )}
+                {adminTab === 'import' && (
+                    <div>
+                        <h2 className="text-xl font-bold mb-4">Import XML</h2>
+                        
+                        {/* 1. IDLE STATE */}
+                        {importState === 'idle' && (
+                            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors group cursor-pointer relative">
+                                <Upload className="mx-auto h-12 w-12 text-gray-400 group-hover:text-indigo-500 transition-colors mb-4"/>
+                                <p className="text-sm text-gray-600 font-medium mb-1">Click to upload XML</p>
+                                <p className="text-xs text-gray-400">Supports MediaWiki Export Format</p>
+                                <input 
+                                    type="file" 
+                                    onChange={handleFileUpload} 
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    accept=".xml"
+                                />
+                            </div>
+                        )}
+
+                        {/* 2. ACTIVE / PAUSED STATE */}
+                        {(importState === 'active' || importState === 'paused') && (
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                                <div className="font-bold flex items-center justify-between mb-2">
+                                    <span className={`flex items-center gap-2 ${importState === 'active' ? 'text-indigo-600' : 'text-amber-600'}`}>
+                                        {importState === 'active' ? <Loader size={18} className="animate-spin" /> : <PauseCircle size={18} />}
+                                        {importState === 'active' ? 'Importing in progress...' : 'Import Paused'}
+                                    </span>
+                                    <span className="text-sm font-mono bg-gray-100 px-2 py-1 rounded text-gray-600">{importProgress}%</span>
+                                </div>
+                                
+                                {/* Visual Progress Bar */}
+                                <div className="w-full bg-gray-100 rounded-full h-3 mb-4 overflow-hidden shadow-inner">
+                                    <div 
+                                        className={`h-3 rounded-full transition-all duration-300 ${importState === 'active' ? 'bg-indigo-500' : 'bg-amber-400'}`} 
+                                        style={{ width: `${importProgress}%` }}
+                                    ></div>
+                                </div>
+
+                                <div className="text-sm text-gray-500 mb-6 font-mono bg-gray-50 p-2 rounded border border-gray-100 truncate">
+                                    {importStatus}
+                                </div>
+
+                                <div className="flex gap-3">
+                                    {importState === 'active' ? (
+                                        <button 
+                                            onClick={() => { abortImportRef.current = true; }} 
+                                            className="flex-1 py-2 bg-amber-100 text-amber-800 font-bold rounded-lg hover:bg-amber-200 transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <PauseCircle size={18} /> Pause Import
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={() => { 
+                                                if (pagesRef.current) { 
+                                                    abortImportRef.current = false; 
+                                                    setImportState('active'); 
+                                                    runImport(pagesRef.current); 
+                                                } 
+                                            }} 
+                                            className="flex-1 py-2 bg-green-100 text-green-800 font-bold rounded-lg hover:bg-green-200 transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            <PlayCircle size={18} /> Resume Import
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 3. COMPLETED STATE */}
+                        {importState === 'completed' && (
+                            <div className="text-center p-8 bg-green-50 rounded-xl border border-green-200 animate-fadeIn">
+                                <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                                    <CheckCircle size={32} />
+                                </div>
+                                <h3 className="text-lg font-bold text-green-900 mb-2">Import Successful!</h3>
+                                <p className="text-green-700 mb-6">{importStatus}</p>
+                                <button 
+                                    onClick={() => {
+                                        setImportState('idle');
+                                        setImportProgress(0);
+                                        setImportStatus(null);
+                                        pagesRef.current = null;
+                                        importCursorRef.current = 0;
+                                    }}
+                                    className="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center gap-2 mx-auto"
+                                >
+                                    <Upload size={18} /> Import Another File
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+                {adminTab === 'sections' && (
+                    <div>
+                        <h2 className="text-xl font-bold mb-4">Manage Home Sections</h2>
+                        <RichTextEditor content={sectionContent} onChange={setSectionContent} theme={currentTheme} />
+                        <div className="mt-4 flex gap-4">
+                            <label><input type="checkbox" checked={sectionPersistent} onChange={e=>setSectionPersistent(e.target.checked)}/> Persistent</label>
+                            {!sectionPersistent && <input type="date" value={sectionExpiry} onChange={e=>setSectionExpiry(e.target.value)} />}
+                        </div>
+                        <button onClick={handleAddSection} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded">Add Section</button>
+                        <div className="mt-8 space-y-2">
+                           {customSections.map(s => (
+                               <div key={s.id} className="p-3 border rounded flex justify-between">
+                                  <div className="text-sm truncate w-64 text-gray-600">{s.content.replace(/<[^>]+>/g, '')}</div>
+                                  <button onClick={() => handleDeleteSection(s.id)} className="text-red-500 hover:bg-red-50 p-1 rounded transition-colors"><Trash2 size={16}/></button>
+                               </div>
+                           ))}
+                        </div>
+                    </div>
+                )}
                 {adminTab === 'settings' && (
                     <div>
-                         <h2 className="text-xl font-bold mb-4">Settings</h2>
-                         <div className="space-y-4">
+                        <h2 className="text-xl font-bold mb-4">Settings</h2>
+                        <div className="space-y-4">
                             <div><label className="block text-sm font-bold">Site Title</label><input className="w-full p-2 border rounded" value={siteTitle} onChange={e=>setSiteTitle(e.target.value)} /></div>
                             <div><label className="block text-sm font-bold">Description</label><textarea className="w-full p-2 border rounded" value={siteDescription} onChange={e=>setSiteDescription(e.target.value)} /></div>
                             
-                            {/* ... other settings ... */}
+                            {/* NEW: Logo Upload with Remove */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Site Logo</label>
+                                <div className="flex gap-2 items-center">
+                                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="w-full p-2 border rounded" />
+                                    {siteLogo && (
+                                        <button onClick={() => setSiteLogo(null)} className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Remove Logo">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    )}
+                                </div>
+                                {siteLogo && <img src={siteLogo} alt="Logo Preview" className="mt-2 h-12 object-contain" />}
+                            </div>
+
+                            {/* NEW: Font Selector */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Font Style</label>
+                                <div className="flex gap-2">
+                                    {['sans', 'serif', 'mono'].map(f => (
+                                        <button key={f} onClick={() => setSiteFont(f)} className={`px-3 py-1 border rounded capitalize ${siteFont === f ? 'bg-indigo-100 border-indigo-500' : ''}`}>{f}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            {/* NEW: Color Selector */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Theme Color</label>
+                                <div className="flex gap-2 flex-wrap">
+                                    {Object.keys(COLORS).map(c => (
+                                        <button key={c} onClick={() => setSiteColor(c)} className={`px-3 py-1 border rounded capitalize ${siteColor === c ? 'bg-gray-200 border-gray-500' : ''}`}>{c}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* NEW: Category Style Selector */}
+                            <div>
+                                <label className="block text-sm font-bold mb-2">Category Card Style</label>
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => setCategoryStyle('gradient')} 
+                                        className={`px-4 py-2 border rounded font-medium flex items-center gap-2 ${categoryStyle === 'gradient' ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-white hover:bg-gray-50'}`}
+                                    >
+                                        <Palette size={16}/> Gradients
+                                    </button>
+                                    <button 
+                                        onClick={() => setCategoryStyle('image')} 
+                                        className={`px-4 py-2 border rounded font-medium flex items-center gap-2 ${categoryStyle === 'image' ? 'bg-indigo-100 border-indigo-500 text-indigo-700' : 'bg-white hover:bg-gray-50'}`}
+                                    >
+                                        <ImageIcon size={16}/> Dynamic Images
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    {categoryStyle === 'gradient' 
+                                        ? "Uses colorful abstract gradients for category backgrounds." 
+                                        : "Uses curated theological images based on category keywords (Bible, Church, History, etc.)."
+                                    }
+                                </p>
+                            </div>
+
+                            <div className="pt-4 border-t flex gap-2">
+                                <button onClick={handleSaveSettings} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700">Save Settings</button>
+                                <button onClick={() => setImageSeed(s => s + 1)} className="px-4 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300">Refresh Images</button>
+                            </div>
+                        </div>
 
                              {/* NEW MAINTENANCE SECTION */}
                              <div className="mt-8 pt-6 border-t border-gray-100">
@@ -1813,14 +2078,9 @@ function App() {
                                     </div>
                                 </div>
                              </div>
-                             
-                             <div className="pt-4 mt-4 border-t flex justify-end">
-                                <button onClick={handleSaveSettings} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700">Save Settings</button>
-                             </div>
-                        </div>
+
                     </div>
                 )}
-
                 {adminTab === 'manage' && (
                     <div>
                         <div className="flex justify-between items-center mb-4">
@@ -1846,64 +2106,77 @@ function App() {
                                 <div className="flex justify-end mb-4">
                                     <button onClick={handleDeleteAll} className="px-3 py-1 bg-red-50 text-red-600 rounded text-sm hover:bg-red-100 font-bold border border-red-200">Delete All Articles</button>
                                 </div>
-                                {/* ... Search & Sort Controls (Same as before) ... */}
-                                <div className="flex gap-4 mb-4">
-                                    <input className="flex-1 p-2 border rounded" placeholder="Filter articles..." value={adminSearchQuery} onChange={e => { setAdminSearchQuery(e.target.value); setAdminPage(1); }} />
-                                    {/* ... Sort controls ... */}
+                                
+                                {/* NEW: Pagination & Search Controls */}
+                                <div className="flex flex-col gap-4 mb-4">
+                                    <div className="flex gap-4">
+                                        <input 
+                                            className="flex-1 p-2 border rounded" 
+                                            placeholder="Filter articles..." 
+                                            value={adminSearchQuery} 
+                                            onChange={e => { setAdminSearchQuery(e.target.value); setAdminPage(1); }} 
+                                        />
+                                        <select 
+                                            className="p-2 border rounded bg-white"
+                                            value={adminPageSize}
+                                            onChange={(e) => { setAdminPageSize(Number(e.target.value)); setAdminPage(1); }}
+                                        >
+                                            <option value={10}>10 per page</option>
+                                            <option value={50}>50 per page</option>
+                                            <option value={100}>100 per page</option>
+                                        </select>
+                                    </div>
+                                    
+                                    {/* NEW: Sort Controls */}
+                                    <div className="flex gap-2 items-center">
+                                        <span className="text-sm font-bold text-gray-500">Sort by:</span>
+                                        <select 
+                                            className="p-2 border rounded bg-white text-sm"
+                                            value={adminSortBy}
+                                            onChange={(e) => setAdminSortBy(e.target.value)}
+                                        >
+                                            <option value="date">Date Created</option>
+                                            <option value="title">Title (A-Z)</option>
+                                            <option value="category">Category</option>
+                                        </select>
+                                        <button 
+                                            onClick={() => setAdminSortDirection(d => d === 'asc' ? 'desc' : 'asc')}
+                                            className="p-2 border rounded hover:bg-gray-50 flex items-center gap-1 text-sm font-medium"
+                                        >
+                                            {adminSortDirection === 'asc' ? <ArrowUp size={16}/> : <ArrowDown size={16}/>}
+                                            {adminSortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                                        </button>
+                                    </div>
                                 </div>
-                                {/* ... List ... */}
-                                <div className="space-y-2">
-                                    {/* (Filtered list logic would go here, same as previous implementation) */}
-                                    <div className="text-center py-10 text-gray-400">Library Loaded. Use controls above to filter.</div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-                
-                {/* ... other tabs ... */}
-                {adminTab === 'import' && ( /* ... Import UI ... */ 
-                    <div>
-                        <h2 className="text-xl font-bold mb-4">Import XML</h2>
-                        {/* ... Import UI Logic ... */}
-                        {importState === 'idle' && (
-                            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors group cursor-pointer relative">
-                                <Upload className="mx-auto h-12 w-12 text-gray-400 group-hover:text-indigo-500 transition-colors mb-4"/>
-                                <p className="text-sm text-gray-600 font-medium mb-1">Click to upload XML</p>
-                                <input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".xml" />
-                            </div>
-                        )}
-                        {/* ... Active/Completed States ... */}
-                        {(importState === 'active' || importState === 'paused' || importState === 'completed') && (
-                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                                <div className="mb-4">
-                                    <div className="flex justify-between mb-1"><span className="font-bold">{importStatus}</span><span>{importProgress}%</span></div>
-                                    <div className="w-full bg-gray-100 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{width: `${importProgress}%`}}></div></div>
-                                </div>
-                                {importState === 'completed' && <button onClick={()=>{setImportState('idle'); setImportProgress(0);}} className="bg-blue-600 text-white px-4 py-2 rounded">Import Another</button>}
-                            </div>
-                        )}
-                    </div>
-                )}
 
-                {/* ... Sections Tab ... */}
-                {adminTab === 'sections' && ( /* ... Sections UI ... */ 
-                    <div>
-                        <h2 className="text-xl font-bold mb-4">Manage Home Sections</h2>
-                         <RichTextEditor content={sectionContent} onChange={setSectionContent} theme={currentTheme} />
-                         <div className="mt-4 flex gap-4">
-                            <label><input type="checkbox" checked={sectionPersistent} onChange={e=>setSectionPersistent(e.target.checked)}/> Persistent</label>
-                            {!sectionPersistent && <input type="date" value={sectionExpiry} onChange={e=>setSectionExpiry(e.target.value)} />}
-                        </div>
-                        <button onClick={handleAddSection} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded">Add Section</button>
-                        <div className="mt-8 space-y-2">
-                           {customSections.map(s => (
-                               <div key={s.id} className="p-3 border rounded flex justify-between">
-                                  <div className="text-sm truncate w-64 text-gray-600">{s.content.replace(/<[^>]+>/g, '')}</div>
-                                  <button onClick={() => handleDeleteSection(s.id)} className="text-red-500 hover:bg-red-50 p-1 rounded transition-colors"><Trash2 size={16}/></button>
-                               </div>
-                           ))}
-                        </div>
+                                {/* List */}
+                                <div className="space-y-2">
+                                    {paginatedArticles.map(a => (
+                                        <div key={a.id} className="flex justify-between p-2 border rounded">
+                                            <div className="flex flex-col">
+                                                <span className="font-medium">{a.title}</span>
+                                                <span className="text-xs text-gray-400">{a.category || <i>Uncategorized</i>} • {new Date(a.createdAt?.seconds * 1000).toLocaleDateString()}</span>
+                                            </div>
+                                            <div className="flex gap-2 items-center">
+                                                <button onClick={()=>{setEditingId(a.id); setEditorTitle(a.title); setEditorCategory(a.category); setEditorContent(a.content); setAdminTab('create');}} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Edit size={16}/></button>
+                                                <button onClick={()=>handleDelete(a.id)} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {paginatedArticles.length === 0 && <div className="text-gray-400 text-sm text-center py-4">No articles found.</div>}
+                                </div>
+                                
+                                {/* NEW: Pagination Footer */}
+                                <div className="flex justify-between items-center mt-4 text-sm text-gray-600">
+                                    <div>Showing {paginatedArticles.length > 0 ? indexOfFirstItem + 1 : 0}-{Math.min(indexOfLastItem, processedArticles.length)} of {processedArticles.length}</div>
+                                    <div className="flex gap-2">
+                                        <button disabled={adminPage === 1} onClick={() => setAdminPage(p => p - 1)} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50">Previous</button>
+                                        <span className="px-2 py-1">Page {adminPage} of {totalPages || 1}</span>
+                                        <button disabled={adminPage >= totalPages} onClick={() => setAdminPage(p => p + 1)} className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50">Next</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -1913,6 +2186,7 @@ function App() {
 
   return (
     <div className={`min-h-screen bg-gray-50 ${currentTheme.font}`}>
+      {/* IMPROVED NOTIFICATION TICKER */}
       {notification && (
         <div className="fixed top-6 right-6 z-[100] animate-fadeIn">
             <div className="bg-slate-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700/50 backdrop-blur-sm">
