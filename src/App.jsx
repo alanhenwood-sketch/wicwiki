@@ -1631,17 +1631,31 @@ function App() {
       setImportStatus(`Importing ${i} / ${total}`);
       setImportProgress(0); 
       
-      while(i < Math.min(total, limit)) {
-          if(abortImportRef.current) { 
+      // Recursive function to process batches without blocking UI
+      const processBatch = async () => {
+          // 1. Check Abort/Pause state immediately
+          if (abortImportRef.current) { 
               setImportState('paused'); 
               importCursorRef.current = i; 
               setImportStatus(`Paused at ${i} / ${total}`);
               return; 
           }
+
+          if (i >= Math.min(total, limit)) {
+              setImportState('completed');
+              setImportStatus("Import Complete!");
+              setImportProgress(100);
+              rebuildStats();
+              return;
+          }
           
+          setImportStatus(`Importing ${i} / ${total}`);
+          setImportProgress(Math.min(100, Math.round((i / total) * 100)));
+
+          // 2. Prepare Batch
           const batch = writeBatch(db);
           let ops = 0;
-          const chunk = Array.from(pages).slice(i, i+BATCH_SIZE); 
+          const chunk = Array.from(pages).slice(i, i + BATCH_SIZE); 
           
           chunk.forEach(p => {
               const title = p.getElementsByTagName("title")[0]?.textContent;
@@ -1676,36 +1690,33 @@ function App() {
               }
           });
           
+          // 3. Commit & Schedule Next
           if(ops > 0) {
               try { 
                   await batch.commit(); 
                   i += BATCH_SIZE; 
                   importCursorRef.current = i; 
-                  setImportStatus(`Importing... ${i} / ${total}`);
-                  setImportProgress(Math.min(100, Math.round((i / total) * 100)));
-                  // Small delay to prevent freezing
-                  await new Promise(r => setTimeout(r, 100)); 
+                  // Critical: Yield to main thread to allow UI updates/clicks
+                  setTimeout(processBatch, 100); 
               } catch(e) { 
                   console.error("Import Batch Error:", e);
                   if(e.code === 'resource-exhausted') {
-                      await new Promise(r => setTimeout(r, 5000)); // Longer wait if quota issues
+                      setImportStatus("Quota limit hit. Waiting 10s...");
+                      setTimeout(processBatch, 10000); // Longer wait if quota issues
                   } else {
                       i += BATCH_SIZE; // Skip bad batch if other error
+                      setTimeout(processBatch, 100);
                   }
               }
-          } else { i += BATCH_SIZE; }
-      }
-      
-      try {
-          const sRef = doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories');
-          const snap = await getDoc(sRef);
-          let final = snap.exists() ? snap.data() : {};
-          Object.entries(batchCounts).forEach(([k,v]) => final[k] = (final[k]||0)+v);
-          await setDoc(sRef, final);
-      } catch(e) { console.error("Stats error", e); }
-      setImportState('completed');
-      setImportStatus("Import Complete!");
-      setImportProgress(100);
+          } else { 
+              i += BATCH_SIZE; 
+              importCursorRef.current = i;
+              setTimeout(processBatch, 50);
+          }
+      };
+
+      // Start Process
+      processBatch();
   };
    
   const rebuildStats = async () => {
