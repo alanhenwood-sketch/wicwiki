@@ -42,7 +42,7 @@ import {
 // --- CONFIGURATION SECTION ---
 // 1. FIREBASE CONFIG
 const liveFirebaseConfig = {
-  apiKey: "AIzaSyC45o7fJuF_akzIZ0eBo1UGGx78ZCnCEk4",
+  apiKey: "AIzaSyC45o7fJuF_akzIZ0eBo1UGGx78ZCnCEk4", // Replace with your new Firebase API Key
   authDomain: "wicwiki-24d11.firebaseapp.com",
   projectId: "wicwiki-24d11",
   storageBucket: "wicwiki-24d11.firebasestorage.app",
@@ -51,7 +51,7 @@ const liveFirebaseConfig = {
 };
 
 // 2. GEMINI AI CONFIG
-const GEMINI_API_KEY = "AIzaSyBkDJkm618_QadoblgpgLFtWxAApNjVywg"; 
+const GEMINI_API_KEY = "AIzaSyCWAdKz-R4FZ7ftUoFa0Atkjq_ery3uB7M"; // Replace with your new Gemini API Key
 
 // --- ERROR BOUNDARY ---
 class ErrorBoundary extends React.Component {
@@ -85,8 +85,10 @@ try {
   const envConfig = (typeof window !== 'undefined' && window.__firebase_config) 
     ? JSON.parse(window.__firebase_config) 
     : null;
+  // Fallback to local config if env not present, but prioritize env if available
   const configToUse = envConfig || liveFirebaseConfig;
 
+  // Check if user has replaced the placeholder
   if (configToUse.apiKey === "PASTE_YOUR_API_KEY_HERE") {
     initError = "CONFIGURATION_NEEDED";
   } else {
@@ -102,67 +104,18 @@ try {
 const rawAppId = (typeof window !== 'undefined' && window.__app_id) ? window.__app_id : 'production-v1';
 const appId = rawAppId.replace(/[\/\\#\?]/g, '_'); 
 
-// --- Theme Config (Updated for Dark Mode) ---
+// --- Theme Config ---
 const FONTS = { sans: "font-sans", serif: "font-serif", mono: "font-mono" };
 const TEXT_SIZES = { sm: "text-sm", base: "text-base", lg: "text-lg" };
 const COLORS = {
-  indigo: { 
-    name: 'Indigo', 
-    text: 'text-indigo-600 dark:text-indigo-400', 
-    bg: 'bg-indigo-600 dark:bg-indigo-500', 
-    bgSoft: 'bg-indigo-50 dark:bg-indigo-900/30', 
-    border: 'border-indigo-200 dark:border-indigo-800', 
-    hoverText: 'hover:text-indigo-900 dark:hover:text-indigo-200', 
-    ring: 'focus:ring-indigo-500' 
-  },
-  rose:   { 
-    name: 'Rose',   
-    text: 'text-rose-600 dark:text-rose-400',   
-    bg: 'bg-rose-600 dark:bg-rose-500',   
-    bgSoft: 'bg-rose-50 dark:bg-rose-900/30',   
-    border: 'border-rose-200 dark:border-rose-800',   
-    hoverText: 'hover:text-rose-900 dark:hover:text-rose-200',   
-    ring: 'focus:ring-rose-500' 
-  },
-  emerald:{ 
-    name: 'Emerald',
-    text: 'text-emerald-600 dark:text-emerald-400',
-    bg: 'bg-emerald-600 dark:bg-emerald-500',
-    bgSoft: 'bg-emerald-50 dark:bg-emerald-900/30',
-    border: 'border-emerald-200 dark:border-emerald-800',
-    hoverText: 'hover:text-emerald-900 dark:hover:text-emerald-200',
-    hoverBg: 'hover:bg-emerald-700', 
-    ring: 'focus:ring-emerald-500' 
-  },
-  amber:  { 
-    name: 'Amber',  
-    text: 'text-amber-600 dark:text-amber-400',  
-    bg: 'bg-amber-600 dark:bg-amber-500',  
-    bgSoft: 'bg-amber-50 dark:bg-amber-900/30',  
-    border: 'border-amber-200 dark:border-amber-800',  
-    hoverText: 'hover:text-amber-900 dark:hover:text-amber-200',  
-    ring: 'focus:ring-amber-500' 
-  },
-  violet: { 
-    name: 'Violet', 
-    text: 'text-violet-600 dark:text-violet-400', 
-    bg: 'bg-violet-600 dark:bg-violet-500', 
-    bgSoft: 'bg-violet-50 dark:bg-violet-900/30', 
-    border: 'border-violet-200 dark:border-violet-800', 
-    hoverText: 'hover:text-violet-900 dark:hover:text-violet-200', 
-    ring: 'focus:ring-violet-500' 
-  },
-  slate:  { 
-    name: 'Slate',  
-    text: 'text-slate-600 dark:text-slate-400',  
-    bg: 'bg-slate-600 dark:bg-slate-500',  
-    bgSoft: 'bg-slate-50 dark:bg-slate-800/50',  
-    border: 'border-slate-200 dark:border-slate-700',  
-    hoverText: 'hover:text-slate-900 dark:hover:text-slate-200',  
-    ring: 'focus:ring-slate-500' 
-  },
+  indigo: { name: 'Indigo', text: 'text-indigo-600', bg: 'bg-indigo-600', bgSoft: 'bg-indigo-50', border: 'border-indigo-200', hoverText: 'hover:text-indigo-900', ring: 'focus:ring-indigo-500' },
+  rose:   { name: 'Rose',   text: 'text-rose-600',   bg: 'bg-rose-600',   bgSoft: 'bg-rose-50',   border: 'border-rose-200',   hoverText: 'hover:text-rose-900',   ring: 'focus:ring-rose-500' },
+  emerald:{ name: 'Emerald',text: 'text-emerald-600',bg: 'bg-emerald-600',bgSoft: 'bg-emerald-50',border: 'border-emerald-200',hoverText: 'hover:text-emerald-900',hoverBg: 'hover:bg-emerald-700', ring: 'focus:ring-emerald-500' },
+  amber:  { name: 'Amber',  text: 'text-amber-600',  bg: 'bg-amber-600',  bgSoft: 'bg-amber-50',  border: 'border-amber-200',  hoverText: 'hover:text-amber-900',  ring: 'focus:ring-amber-500' },
+  violet: { name: 'Violet', text: 'text-violet-600', bg: 'bg-violet-600', bgSoft: 'bg-violet-50', border: 'border-violet-200', hoverText: 'hover:text-violet-900', ring: 'focus:ring-violet-500' },
+  slate:  { name: 'Slate',  text: 'text-slate-600',  bg: 'bg-slate-600',  bgSoft: 'bg-slate-50',  border: 'border-slate-200',  hoverText: 'hover:text-slate-900',  ring: 'focus:ring-slate-500' },
 };
-const TEXT_COLORS = { gray: "text-gray-600 dark:text-gray-300", slate: "text-slate-600 dark:text-slate-300", zinc: "text-zinc-600 dark:text-zinc-300", neutral: "text-neutral-600 dark:text-neutral-300" };
+const TEXT_COLORS = { gray: "text-gray-600", slate: "text-slate-600", zinc: "text-zinc-600", neutral: "text-neutral-600" };
 
 const POPULAR_VERSE_REFS = [
   "John 3:16", "Philippians 4:13", "Psalm 23:1", "Romans 8:28", "Jeremiah 29:11",
@@ -173,7 +126,7 @@ const POPULAR_VERSE_REFS = [
 
 const CANONICAL_BOOKS = [
   "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "Joshua", "Judges", "Ruth",
-  "1 Samuel", "2 Samuel", "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra", "Nehemiah", "Esther",
+  "1 Samuel", "2 Samuel", "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra", "Nehemiah", "Neh", "Esther",
   "Job", "Psalms", "Proverbs", "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations", "Ezekiel", "Daniel",
   "Hosea", "Joel", "Amos", "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi",
   "Matthew", "Mark", "Luke", "John", "Acts", "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians", "Philippians", "Colossians",
@@ -186,8 +139,8 @@ const NavItem = ({ icon: Icon, label, active, onClick, theme, title, colorClass,
   const textCol = theme.colors.text;
   const bgCol = theme.colors.bgSoft;
   return (
-    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white`}`} title={label}>
-      <Icon size={18} className={active ? textCol : "text-gray-400 dark:text-gray-500"} />
+    <button onClick={onClick} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${active ? `${bgCol} ${textCol}` : `text-gray-500 hover:bg-gray-50 hover:text-gray-900`}`} title={label}>
+      <Icon size={18} className={active ? textCol : "text-gray-400"} />
       <span className="hidden md:inline">{label}</span>
     </button>
   );
@@ -196,9 +149,9 @@ const Badge = ({ children, theme, onClick }) => (
   <span onClick={(e) => { if (onClick) { e.stopPropagation(); onClick(); } }} className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${theme.colors.bgSoft} ${theme.colors.text} ${onClick ? 'cursor-pointer hover:opacity-80 hover:underline' : ''}`} title={onClick ? "View category" : ""}>{children}</span>
 );
 
-const Skeleton = ({ className }) => <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className}`}></div>;
+const Skeleton = ({ className }) => <div className={`animate-pulse bg-gray-200 rounded ${className}`}></div>;
 const ArticleSkeleton = () => (
-  <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
     <div className="flex justify-between items-start mb-4"><Skeleton className="h-6 w-2/3 mb-2" /><Skeleton className="h-5 w-20" /></div>
     <div className="space-y-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /></div>
   </div>
@@ -220,17 +173,17 @@ const RichTextEditor = ({ content, onChange, theme }) => {
   };
 
   return (
-    <div className={`border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow-sm focus-within:ring-2 ${theme.colors.ring} focus-within:border-transparent`}>
-      <div className="flex gap-1 p-2 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-        <button type="button" onClick={(e)=>{e.preventDefault(); exec('bold');}} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-300" title="Bold"><Bold size={18}/></button>
-        <button type="button" onClick={(e)=>{e.preventDefault(); exec('italic');}} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-300" title="Italic"><Italic size={18}/></button>
-        <button type="button" onClick={(e)=>{e.preventDefault(); exec('formatBlock','H3');}} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-300" title="Heading"><Type size={18}/></button>
-        <button type="button" onClick={(e)=>{e.preventDefault(); exec('insertUnorderedList');}} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-300" title="Bullet List"><List size={18}/></button>
+    <div className={`border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm focus-within:ring-2 ${theme.colors.ring} focus-within:border-transparent`}>
+      <div className="flex gap-1 p-2 bg-gray-50 border-b border-gray-200">
+        <button type="button" onClick={(e)=>{e.preventDefault(); exec('bold');}} className="p-2 hover:bg-gray-200 rounded text-gray-700" title="Bold"><Bold size={18}/></button>
+        <button type="button" onClick={(e)=>{e.preventDefault(); exec('italic');}} className="p-2 hover:bg-gray-200 rounded text-gray-700" title="Italic"><Italic size={18}/></button>
+        <button type="button" onClick={(e)=>{e.preventDefault(); exec('formatBlock','H3');}} className="p-2 hover:bg-gray-200 rounded text-gray-700" title="Heading"><Type size={18}/></button>
+        <button type="button" onClick={(e)=>{e.preventDefault(); exec('insertUnorderedList');}} className="p-2 hover:bg-gray-200 rounded text-gray-700" title="Bullet List"><List size={18}/></button>
       </div>
       <div 
         ref={editorRef} 
         contentEditable 
-        className={`p-4 outline-none max-w-none text-gray-800 dark:text-gray-100 ${theme.font} text-base leading-relaxed`}
+        className={`p-4 outline-none max-w-none text-gray-800 ${theme.font} text-base leading-relaxed`}
         style={{ minHeight: '300px' }}
         onInput={e => onChange(e.currentTarget.innerHTML)} 
       />
@@ -240,7 +193,7 @@ const RichTextEditor = ({ content, onChange, theme }) => {
 
 // --- YouTube Embed Component ---
 const YouTubeEmbed = ({ videoId }) => (
-  <div className="my-8 w-full max-w-3xl mx-auto overflow-hidden rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 bg-black relative" style={{ paddingBottom: '56.25%', height: 0 }}>
+  <div className="my-8 w-full max-w-3xl mx-auto overflow-hidden rounded-xl shadow-lg border border-gray-200 bg-black relative" style={{ paddingBottom: '56.25%', height: 0 }}>
     <iframe 
       src={`https://www.youtube.com/embed/${videoId}`} 
       title="YouTube video player"
@@ -281,37 +234,37 @@ const BibleReader = ({ theme, book, chapter, setBook, setChapter }) => {
     }, [book, chapter]);
 
     return (
-        <div className="flex flex-col h-[70vh] bg-amber-50 dark:bg-amber-950/40 rounded-xl overflow-hidden border border-amber-200 dark:border-amber-800 shadow-sm">
-            <div className="flex items-center gap-2 p-3 bg-amber-100/50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800">
+        <div className="flex flex-col h-[70vh] bg-amber-50 rounded-xl overflow-hidden border border-amber-200 shadow-sm">
+            <div className="flex items-center gap-2 p-3 bg-amber-100/50 border-b border-amber-200">
                  <select 
                     value={book} 
                     onChange={e => {setBook(e.target.value); setChapter(1);}} 
-                    className="flex-1 p-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-white dark:bg-gray-800 text-sm font-medium text-amber-900 dark:text-amber-100 focus:ring-2 focus:ring-amber-400 focus:outline-none"
+                    className="flex-1 p-2 rounded-lg border border-amber-200 bg-white text-sm font-medium text-amber-900 focus:ring-2 focus:ring-amber-400 focus:outline-none"
                  >
                     {CANONICAL_BOOKS.map(b => <option key={b} value={b}>{b}</option>)}
                  </select>
-                 <div className="flex items-center bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-700 overflow-hidden">
+                 <div className="flex items-center bg-white rounded-lg border border-amber-200 overflow-hidden">
                     <span className="px-2 text-xs text-amber-500 font-bold uppercase">Ch</span>
                     <input 
                         type="number" 
                         value={chapter} 
                         onChange={e => setChapter(Math.max(1, parseInt(e.target.value) || 1))} 
-                        className="w-12 p-2 text-sm font-bold text-center text-amber-900 dark:text-amber-100 focus:outline-none bg-transparent" 
+                        className="w-12 p-2 text-sm font-bold text-center text-amber-900 focus:outline-none" 
                     />
                  </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-5 text-amber-900/90 dark:text-amber-100/90 font-serif leading-loose text-base bg-amber-50/30 dark:bg-transparent">
+            <div className="flex-1 overflow-y-auto p-5 text-amber-900/90 font-serif leading-loose text-base bg-amber-50/30">
                 {loading ? (
                     <div className="flex flex-col items-center justify-center h-40 gap-3 text-amber-400">
                         <Loader className="animate-spin" size={24} />
                         <span className="text-sm">Loading Scripture...</span>
                     </div>
                 ) : error ? (
-                    <div className="text-center py-10 text-amber-800/60 dark:text-amber-200/60 italic">{error}</div>
+                    <div className="text-center py-10 text-amber-800/60 italic">{error}</div>
                 ) : (
                     <div>
-                        <h3 className="text-xl font-bold text-amber-900 dark:text-amber-100 mb-4 text-center border-b border-amber-200/50 dark:border-amber-800/50 pb-2">{book} {chapter}</h3>
+                        <h3 className="text-xl font-bold text-amber-900 mb-4 text-center border-b border-amber-200/50 pb-2">{book} {chapter}</h3>
                         {text.split('\n').map((paragraph, idx) => (
                              <p key={idx} className="mb-4">{paragraph}</p>
                         ))}
@@ -319,17 +272,17 @@ const BibleReader = ({ theme, book, chapter, setBook, setChapter }) => {
                 )}
             </div>
             
-            <div className="p-3 border-t border-amber-200 dark:border-amber-800 bg-amber-100/50 dark:bg-amber-900/30 flex justify-between gap-3">
+            <div className="p-3 border-t border-amber-200 bg-amber-100/50 flex justify-between gap-3">
                 <button 
                     onClick={()=>setChapter(c=>Math.max(1,c-1))} 
                     disabled={chapter<=1}
-                    className="flex-1 py-2 px-3 bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-700 rounded-lg text-sm font-bold text-amber-800 dark:text-amber-100 hover:bg-amber-50 dark:hover:bg-amber-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 py-2 px-3 bg-white border border-amber-200 rounded-lg text-sm font-bold text-amber-800 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                     <ChevronLeft size={16}/> Prev
                 </button>
                 <button 
                     onClick={()=>setChapter(c=>c+1)}
-                    className="flex-1 py-2 px-3 bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-700 rounded-lg text-sm font-bold text-amber-800 dark:text-amber-100 hover:bg-amber-50 dark:hover:bg-amber-900/50 transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 py-2 px-3 bg-white border border-amber-200 rounded-lg text-sm font-bold text-amber-800 hover:bg-amber-50 transition-colors flex items-center justify-center gap-2"
                 >
                     Next <ChevronRight size={16}/>
                 </button>
@@ -357,7 +310,7 @@ const VerseTooltip = ({ reference, theme, onOpenBible }) => {
 
   return (
     <span 
-      className={`relative group cursor-pointer font-bold border-b-2 border-dotted inline-block ${theme.colors.text} border-indigo-200 dark:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors rounded px-0.5`} 
+      className={`relative group cursor-pointer font-bold border-b-2 border-dotted inline-block ${theme.colors.text} border-indigo-200 hover:bg-indigo-50 transition-colors rounded px-0.5`} 
       onMouseEnter={handleMouseEnter}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenBible(reference); }}
       title="Click to open in Bible reader"
@@ -470,15 +423,15 @@ const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
 
         let baseClass = props.className || '';
         // Typography styles
-        if (tagName === 'p') baseClass += ' mb-6 leading-relaxed text-gray-800 dark:text-gray-300 text-base md:text-lg';
-        if (tagName === 'h1') baseClass += ' text-3xl font-extrabold mt-10 mb-6 text-gray-900 dark:text-gray-100 border-b dark:border-gray-700 pb-4';
-        if (tagName === 'h2') baseClass += ' text-2xl font-bold mt-8 mb-4 text-gray-800 dark:text-gray-200 border-b pb-2 border-gray-100 dark:border-gray-700';
-        if (tagName === 'h3') baseClass += ' text-xl font-bold mt-6 mb-3 text-gray-800 dark:text-gray-200';
-        if (tagName === 'ul') baseClass += ' list-disc list-outside mb-6 ml-6 text-gray-700 dark:text-gray-300 space-y-2';
-        if (tagName === 'ol') baseClass += ' list-decimal list-outside mb-6 ml-6 text-gray-700 dark:text-gray-300 space-y-2';
+        if (tagName === 'p') baseClass += ' mb-6 leading-relaxed text-gray-800 text-base md:text-lg';
+        if (tagName === 'h1') baseClass += ' text-3xl font-extrabold mt-10 mb-6 text-gray-900 border-b pb-4';
+        if (tagName === 'h2') baseClass += ' text-2xl font-bold mt-8 mb-4 text-gray-800 border-b pb-2 border-gray-100';
+        if (tagName === 'h3') baseClass += ' text-xl font-bold mt-6 mb-3 text-gray-800';
+        if (tagName === 'ul') baseClass += ' list-disc list-outside mb-6 ml-6 text-gray-700 space-y-2';
+        if (tagName === 'ol') baseClass += ' list-decimal list-outside mb-6 ml-6 text-gray-700 space-y-2';
         if (tagName === 'li') baseClass += ' pl-1';
-        if (tagName === 'blockquote') baseClass += ' border-l-4 border-indigo-300 dark:border-indigo-700 pl-6 py-3 my-6 italic text-gray-700 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 rounded-r-lg';
-        if (tagName === 'b' || tagName === 'strong') baseClass += ' font-bold text-gray-900 dark:text-white';
+        if (tagName === 'blockquote') baseClass += ' border-l-4 border-indigo-300 pl-6 py-3 my-6 italic text-gray-700 bg-gray-50 rounded-r-lg';
+        if (tagName === 'b' || tagName === 'strong') baseClass += ' font-bold text-gray-900';
         if (tagName === 'i' || tagName === 'em') baseClass += ' italic';
         
         props.className = baseClass;
@@ -486,7 +439,7 @@ const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
         // Link handling
         if (props['data-wiki-link'] && onNavigate) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); onNavigate(props['data-wiki-link']); };
-          props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold bg-indigo-50 dark:bg-indigo-900/30 px-1 rounded`;
+          props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold bg-indigo-50 px-1 rounded`;
         }
         if (props['data-wiki-anchor']) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); const el = document.getElementById(props['data-wiki-anchor']); if(el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
@@ -528,7 +481,7 @@ const VerseOfTheDayWidget = () => {
   }, []);
 
   return (
-    <div className="bg-gradient-to-br from-indigo-900 to-violet-900 rounded-2xl p-8 shadow-lg text-white mb-8 border border-white/10">
+    <div className="bg-gradient-to-br from-indigo-900 to-violet-900 rounded-2xl p-8 shadow-lg text-white mb-8">
        <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
          <div className={`flex-1 text-center md:text-left transition-opacity duration-300 ${animate ? 'opacity-0' : 'opacity-100'}`}>
            <div className="flex items-center justify-center md:justify-start gap-2 mb-2 text-indigo-200 text-sm font-medium uppercase tracking-widest"><Sparkles size={14} className="text-yellow-400" /> Verse of the Day</div>
@@ -553,17 +506,17 @@ const FloatingNotesWidget = ({ article, noteContent, onChange, onExport, onShare
   const [isMinimized, setIsMinimized] = useState(true);
   
   if (!visible || !article) return null;
-  if (isMinimized) return (<button onClick={() => setIsMinimized(false)} className={`fixed bottom-6 right-6 z-50 p-3 rounded-full shadow-xl transition-all hover:scale-105 flex items-center gap-2 animate-fadeIn border-2 border-white dark:border-gray-700 text-white ${theme.colors.bg}`}><StickyNote size={24} /></button>);
+  if (isMinimized) return (<button onClick={() => setIsMinimized(false)} className={`fixed bottom-6 right-6 z-50 p-3 rounded-full shadow-xl transition-all hover:scale-105 flex items-center gap-2 animate-fadeIn border-2 border-white text-white ${theme.colors.bg}`}><StickyNote size={24} /></button>);
 
   return (
-    <div className={`fixed bottom-6 right-6 z-50 w-80 md:w-96 rounded-2xl shadow-2xl border-2 flex flex-col animate-slideUp transition-all overflow-hidden h-96 bg-yellow-50 dark:bg-gray-800 border-yellow-200 dark:border-gray-700`}>
-       <div className={`flex items-center justify-between p-3 border-b bg-yellow-100/80 dark:bg-gray-900/80 backdrop-blur-sm border-yellow-200 dark:border-gray-700`}>
-         <div className="flex items-center gap-2 overflow-hidden"><StickyNote size={16} className="text-yellow-700 dark:text-yellow-500" /><h4 className={`font-bold text-yellow-900 dark:text-yellow-100 text-sm truncate w-40 ${theme.font}`}>{article.title}</h4></div>
+    <div className={`fixed bottom-6 right-6 z-50 w-80 md:w-96 rounded-2xl shadow-2xl border-2 flex flex-col animate-slideUp transition-all overflow-hidden h-96 bg-yellow-50 border-yellow-200`}>
+       <div className={`flex items-center justify-between p-3 border-b bg-yellow-100/80 backdrop-blur-sm border-yellow-200`}>
+         <div className="flex items-center gap-2 overflow-hidden"><StickyNote size={16} className="text-yellow-700" /><h4 className={`font-bold text-yellow-900 text-sm truncate w-40 ${theme.font}`}>{article.title}</h4></div>
          <div className="flex gap-1">
-            <button onClick={() => setIsMinimized(true)} className="p-1.5 hover:bg-yellow-200 dark:hover:bg-gray-700 rounded-lg text-yellow-800 dark:text-yellow-100" title="Minimize"><Minimize2 size={14}/></button>
+            <button onClick={() => setIsMinimized(true)} className="p-1.5 hover:bg-yellow-200 rounded-lg text-yellow-800" title="Minimize"><Minimize2 size={14}/></button>
          </div>
        </div>
-       <textarea className={`flex-1 w-full bg-white/50 dark:bg-gray-800 p-4 text-sm text-gray-800 dark:text-gray-200 leading-relaxed focus:outline-none resize-none font-medium placeholder-yellow-800/30 dark:placeholder-gray-600 ${theme.font}`} placeholder="Jot down your thoughts here..." value={noteContent} onChange={(e) => onChange(article.id, e.target.value)} autoFocus></textarea>
+       <textarea className={`flex-1 w-full bg-white/50 p-4 text-sm text-gray-800 leading-relaxed focus:outline-none resize-none font-medium placeholder-yellow-800/30 ${theme.font}`} placeholder="Jot down your thoughts here..." value={noteContent} onChange={(e) => onChange(article.id, e.target.value)} autoFocus></textarea>
     </div>
   );
 };
@@ -597,6 +550,7 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
       }
 
       // Simplified list for token efficiency. Limit content snippet size to keep it fast.
+      // Limit to 500 items for context to prevent payload too large errors
       const articleSummary = articles.slice(0, 500).map(a => ({ 
           id: a.id, 
           title: a.title, 
@@ -689,7 +643,7 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
   }
 
   return (
-    <div className="fixed bottom-6 left-6 z-50 w-80 md:w-96 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-indigo-100 dark:border-gray-700 flex flex-col h-[500px] overflow-hidden animate-slideUp">
+    <div className="fixed bottom-6 left-6 z-50 w-80 md:w-96 bg-white rounded-2xl shadow-2xl border border-indigo-100 flex flex-col h-[500px] overflow-hidden animate-slideUp">
       {/* Header */}
       <div className="bg-indigo-600 p-4 flex justify-between items-center text-white">
         <div className="flex items-center gap-2">
@@ -700,8 +654,8 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
       </div>
 
       {/* Body */}
-      <div className="flex-1 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900 flex flex-col gap-3">
-        <div className="bg-indigo-100 dark:bg-indigo-900/40 p-3 rounded-lg rounded-tl-none self-start text-sm text-indigo-900 dark:text-indigo-100 max-w-[85%]">
+      <div className="flex-1 p-4 overflow-y-auto bg-gray-50 flex flex-col gap-3">
+        <div className="bg-indigo-100 p-3 rounded-lg rounded-tl-none self-start text-sm text-indigo-900 max-w-[85%]">
           Hello! I can help you find specific articles in the library. What are you looking for?
         </div>
         
@@ -721,10 +675,10 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
                         <div 
                             key={a.id} 
                             onClick={() => navigateTo('article', a)}
-                            className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md cursor-pointer transition-all"
+                            className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:border-indigo-300 hover:shadow-md cursor-pointer transition-all"
                         >
-                            <div className="font-bold text-indigo-700 dark:text-indigo-400 text-sm mb-1">{a.title}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">{a.category || "Uncategorized"}</div>
+                            <div className="font-bold text-indigo-700 text-sm mb-1">{a.title}</div>
+                            <div className="text-xs text-gray-500">{a.category || "Uncategorized"}</div>
                         </div>
                     ))}
                   </>
@@ -738,7 +692,7 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
       </div>
 
       {/* Input */}
-      <div className="p-3 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700">
+      <div className="p-3 bg-white border-t border-gray-100">
         <div className="relative">
           <input 
             type="text" 
@@ -746,7 +700,7 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="e.g. 'verses about healing'"
-            className="w-full pl-4 pr-10 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+            className="w-full pl-4 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <button 
             onClick={handleSearch}
@@ -765,11 +719,11 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
 function App() {
   if (initError === "CONFIGURATION_NEEDED") {
       return (
-          <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans">
-              <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 border border-red-100 dark:border-red-900 text-center">
-                  <div className="w-16 h-16 bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32}/></div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Configuration Needed</h1>
-                  <p className="text-gray-600 dark:text-gray-300 mb-6">Update <code>src/App.jsx</code> with your Firebase keys.</p>
+          <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
+              <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 border border-red-100 text-center">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32}/></div>
+                  <h1 className="text-2xl font-bold text-gray-900 mb-2">Configuration Needed</h1>
+                  <p className="text-gray-600 mb-6">Update <code>src/App.jsx</code> with your Firebase keys.</p>
               </div>
           </div>
       );
