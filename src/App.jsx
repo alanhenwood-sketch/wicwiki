@@ -362,6 +362,7 @@ const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
   ];
   
   const sortedBooks = books.sort((a,b) => b.length - a.length).join("|");
+  // Updated Regex: Allows for an optional dot \.? after the book name before the space
   const verseRegex = new RegExp(`(\\b(?:${sortedBooks})\\.?\\s+\\d+:\\d+(?:[-–,]\\d+)*\\b)`, 'gi');
   
   const youtubeRegex = /\b(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:\S+)?/g;
@@ -1361,7 +1362,9 @@ function App() {
       return;
     }
 
-    const cleanContent = selectedArticle.content.replace(/<[^>]+>/g, ''); 
+    // Limit content to ~30k chars to avoid token limits while keeping enough context
+    const cleanContent = selectedArticle.content.replace(/<[^>]+>/g, '').substring(0, 30000); 
+    
     let userQuery = ""; 
     switch (promptType) { 
         case 'summary': userQuery = `Summarize this theological article in 3-5 concise bullet points. The article is titled "${selectedArticle.title}":\n\n${cleanContent}`; break; 
@@ -1369,21 +1372,36 @@ function App() {
         case 'chat': userQuery = `Context: You are a helpful theological assistant answering questions about the article "${selectedArticle.title}". Article Content: ${cleanContent}\n\nUser Question: ${customPrompt}`; break; 
         default: userQuery = customPrompt; 
     } 
-    const payload = { contents: [{ parts: [{ text: userQuery }] }] }; 
+    
+    const payload = { 
+        contents: [{ parts: [{ text: userQuery }] }],
+        safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
+    }; 
+
     let attempt = 0; 
     const fetchWithRetry = async () => { 
         try { 
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); 
-            if (!response.ok) throw new Error(response.statusText); 
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error?.message || response.statusText); 
+            }
             const data = await response.json(); 
+            if (!data.candidates || !data.candidates[0].content) throw new Error("No content generated");
             setAiResponse(data.candidates?.[0]?.content?.parts?.[0]?.text); 
         } catch (error) { 
+            console.error("Gemini Error:", error);
             if (attempt < 2) { 
                 await new Promise(r => setTimeout(r, 1000)); 
                 attempt++;
                 await fetchWithRetry(); 
             } else { 
-                setAiResponse("Sorry, I couldn't reach the AI service at this time."); 
+                setAiResponse(`Error: ${error.message}. Please try again later.`); 
             } 
         } 
     }; 
@@ -1978,9 +1996,13 @@ function App() {
                         <div className="mt-8 space-y-2">
                            {customSections.map(s => (
                                <div key={s.id} className="p-3 border rounded flex justify-between">
-                                  <div className="text-sm truncate w-64 text-gray-600">{s.content.replace(/<[^>]+>/g, '')}</div>
+                                  {/* FIX: Use HtmlContentRenderer for safe HTML preview or simplified text extraction */}
+                                  <div className="text-sm truncate w-64 text-gray-600">
+                                     {/* Simplified text extraction for admin preview */}
+                                     {s.content.replace(/<[^>]+>/g, '')}
+                                  </div>
                                   <button onClick={() => handleDeleteSection(s.id)} className="text-red-500 hover:bg-red-50 p-1 rounded transition-colors"><Trash2 size={16}/></button>
-                               </div>
+                                </div>
                            ))}
                         </div>
                     </div>
@@ -2054,31 +2076,9 @@ function App() {
                             <div className="pt-4 border-t flex gap-2">
                                 <button onClick={handleSaveSettings} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700">Save Settings</button>
                                 <button onClick={() => setImageSeed(s => s + 1)} className="px-4 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300">Refresh Images</button>
+                                <button onClick={rebuildStats} className="px-4 py-2 bg-amber-600 text-white rounded text-sm hover:bg-amber-700">Rebuild Category Stats</button>
                             </div>
                         </div>
-
-                             {/* NEW MAINTENANCE SECTION */}
-                             <div className="mt-8 pt-6 border-t border-gray-100">
-                                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Database size={16}/> Database Maintenance</h3>
-                                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex flex-col gap-3">
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <div className="font-bold text-amber-900 text-sm">Category Statistics</div>
-                                            <div className="text-xs text-amber-700">Recalculates category counts shown on home page.</div>
-                                        </div>
-                                        <button onClick={rebuildStats} className="px-3 py-1.5 bg-amber-600 text-white rounded text-sm hover:bg-amber-700 font-medium">Rebuild Categories</button>
-                                    </div>
-                                    <div className="h-px bg-amber-200/50"></div>
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <div className="font-bold text-amber-900 text-sm">Recent Articles Cache</div>
-                                            <div className="text-xs text-amber-700">Generates the 'Recent' list for fast home page loading.</div>
-                                        </div>
-                                        <button onClick={generateRecentStats} className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 font-medium">Generate Cache</button>
-                                    </div>
-                                </div>
-                             </div>
-
                     </div>
                 )}
                 {adminTab === 'manage' && (
@@ -2087,7 +2087,7 @@ function App() {
                             <h2 className="text-xl font-bold">Manage Articles</h2>
                         </div>
                         
-                        {/* LAZY LOAD WARNING */}
+                        {/* LAZY LOAD WARNING - FIXED */}
                         {!isLibraryLoaded ? (
                             <div className="bg-blue-50 p-8 rounded-xl text-center border border-blue-100 flex flex-col items-center gap-4">
                                 <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center"><Database size={24}/></div>
