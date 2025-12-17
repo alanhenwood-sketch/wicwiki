@@ -523,18 +523,21 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
 
   const handleSearch = async () => {
     if (!query.trim()) return;
-    if (articles.length === 0) {
-        setResponse([]); // No articles to search
-        setLoading(false);
-        return;
-    }
     setLoading(true);
     setResponse(null);
 
+    // 1. Client-Side Keyword Fallback (Instant & Safe)
+    const lowerQuery = query.toLowerCase();
+    const fallbackResults = articles.filter(a => 
+        (a.title && a.title.toLowerCase().includes(lowerQuery)) || 
+        (a.category && a.category.toLowerCase().includes(lowerQuery)) ||
+        (a.content && a.content.toLowerCase().includes(lowerQuery))
+    ).slice(0, 5);
+
     try {
       const apiKey = GEMINI_API_KEY;
-      if (apiKey === "PASTE_YOUR_GEMINI_API_KEY_HERE" || !apiKey) {
-        setResponse({ error: "API Key Config Needed" });
+      if (!apiKey || apiKey.includes("PASTE_YOUR")) {
+        setResponse(fallbackResults);
         setLoading(false);
         return;
       }
@@ -544,7 +547,7 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
           id: a.id, 
           title: a.title, 
           category: a.category || "Uncategorized",
-          snippet: (a.content || "").replace(/<[^>]+>/g, ' ').substring(0, 200)
+          snippet: (a.content || "").replace(/<[^>]+>/g, ' ').substring(0, 150)
       }));
       
       const prompt = `
@@ -578,17 +581,13 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
 
       const data = await res.json();
       
-      if (data.error) {
-          console.error("Gemini API Error:", data.error);
-          throw new Error(data.error.message || "API Error");
+      if (data.error || !data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
+          console.warn("AI returned error or no text, using fallback");
+          setResponse(fallbackResults);
+          return;
       }
 
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      
-      if (!rawText) {
-          console.error("Unexpected API Response:", data);
-          throw new Error("No response text from AI");
-      }
+      const rawText = data.candidates[0].content.parts[0].text;
       
       // Robust Parsing: Find first '[' and last ']'
       let ids = [];
@@ -601,14 +600,23 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
         }
       } catch (e) {
           console.error("Failed to parse AI response:", rawText);
+          // If parse fails, use fallback
+          setResponse(fallbackResults);
+          return;
       }
 
       const matchedArticles = ids.map(id => articles.find(a => a.id === id)).filter(Boolean);
-      setResponse(matchedArticles);
+      
+      // If AI found nothing, fallback to keywords
+      if (matchedArticles.length === 0) {
+          setResponse(fallbackResults);
+      } else {
+          setResponse(matchedArticles);
+      }
 
     } catch (e) {
-      console.error(e);
-      setResponse([]);
+      console.error("Librarian Error:", e);
+      setResponse(fallbackResults);
     } finally {
       setLoading(false);
     }
