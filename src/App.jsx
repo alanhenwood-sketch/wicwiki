@@ -13,7 +13,7 @@ import {
   ArrowUp, ArrowDown, BookOpen, Bot
 } from 'lucide-react';
 
-// --- Firebase Imports (Fixed) ---
+// --- Firebase Imports ---
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -539,16 +539,26 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
         return;
       }
 
-      // Simplified list for token efficiency
-      const articleSummary = articles.map(a => ({ id: a.id, title: a.title, category: a.category || "Uncategorized" }));
+      // Simplified list for token efficiency. Limit content snippet size to keep it fast.
+      const articleSummary = articles.map(a => ({ 
+          id: a.id, 
+          title: a.title, 
+          category: a.category || "Uncategorized",
+          snippet: (a.content || "").replace(/<[^>]+>/g, ' ').substring(0, 200)
+      }));
       
       const prompt = `
         You are a theological research librarian. User Query: "${query}".
-        Library: ${JSON.stringify(articleSummary)}.
         
-        Task: Identify the top 3-5 articles from the library that best answer the query. Use semantic understanding (e.g. "healing" might match "miracles" or "faith").
-        Return ONLY a JSON array of the article IDs, ranked by relevance. Example: ["id1", "id2"].
-        If no relevant articles found, return empty array [].
+        Library Index: 
+        ${JSON.stringify(articleSummary)}
+        
+        Task: Identify the 3-5 most relevant articles. 
+        If the query is broad, return the best matches. 
+        If specific, find the exact match.
+        Return ONLY a raw JSON array of strings (article IDs). 
+        Do not include markdown formatting or explanation.
+        Example: ["id_1", "id_2"]
       `;
 
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
@@ -568,7 +578,6 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
 
       const data = await res.json();
       
-      // Better error logging
       if (data.error) {
           console.error("Gemini API Error:", data.error);
           throw new Error(data.error.message || "API Error");
@@ -581,9 +590,18 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
           throw new Error("No response text from AI");
       }
       
-      // Parse JSON from text (handle potential markdown code blocks)
-      const jsonStr = rawText.replace(/```json|```/g, '').trim();
-      const ids = JSON.parse(jsonStr);
+      // Robust Parsing: Find first '[' and last ']'
+      let ids = [];
+      try {
+        const match = rawText.match(/\[[\s\S]*\]/);
+        if (match) {
+            ids = JSON.parse(match[0]);
+        } else {
+            ids = JSON.parse(rawText);
+        }
+      } catch (e) {
+          console.error("Failed to parse AI response:", rawText);
+      }
 
       const matchedArticles = ids.map(id => articles.find(a => a.id === id)).filter(Boolean);
       setResponse(matchedArticles);
@@ -624,8 +642,6 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
         <div className="bg-indigo-100 p-3 rounded-lg rounded-tl-none self-start text-sm text-indigo-900 max-w-[85%]">
           Hello! I can help you find specific articles in the library. What are you looking for?
         </div>
-        
-        {/* User Query Display (Optional, skipping for simplicity to keep it clean) */}
         
         {loading && (
            <div className="self-center my-4 flex flex-col items-center gap-2 text-gray-400 text-xs">
