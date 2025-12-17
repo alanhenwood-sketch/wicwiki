@@ -1621,6 +1621,9 @@ function App() {
       const limit = 100000;
       let batchCounts = {};
       
+      // OPTIMIZATION: Increased batch size from 10 to 400 for speed
+      const BATCH_SIZE = 400; 
+      
       setImportStatus(`Importing ${i} / ${total}`);
       setImportProgress(0); 
       
@@ -1628,7 +1631,7 @@ function App() {
           if(abortImportRef.current) { setImportState('paused'); importCursorRef.current = i; return; }
           const batch = writeBatch(db);
           let ops = 0;
-          const chunk = Array.from(pages).slice(i, i+10); 
+          const chunk = Array.from(pages).slice(i, i+BATCH_SIZE); 
           chunk.forEach(p => {
               const title = p.getElementsByTagName("title")[0]?.textContent;
               const rev = p.getElementsByTagName("revision")[0];
@@ -1682,13 +1685,14 @@ function App() {
           if(ops > 0) {
               try { 
                   await batch.commit(); 
-                  i += 10; 
+                  i += BATCH_SIZE; 
                   importCursorRef.current = i; 
                   setImportStatus(`Importing... ${i} / ${total}`);
                   setImportProgress(Math.min(100, Math.round((i / total) * 100)));
-                  await new Promise(r => setTimeout(r, 200)); 
-              } catch(e) { if(e.code === 'resource-exhausted') await new Promise(r => setTimeout(r, 10000)); else i += 10; }
-          } else { i += 10; }
+                  // Reduced wait time slightly as batches are larger
+                  await new Promise(r => setTimeout(r, 100)); 
+              } catch(e) { if(e.code === 'resource-exhausted') await new Promise(r => setTimeout(r, 10000)); else i += BATCH_SIZE; }
+          } else { i += BATCH_SIZE; }
       }
       try {
           const sRef = doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories');
