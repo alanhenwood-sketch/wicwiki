@@ -580,8 +580,10 @@ function App() {
   useEffect(() => {
       const handleBeforeUnload = (e) => {
           if (Object.keys(notesRef.current).length > 0) {
+              const message = "You have unsaved notes! Please download them before closing, or they will be lost.";
               e.preventDefault();
-              e.returnValue = ''; // Trigger browser default warning dialog
+              e.returnValue = message; // Standard for some browsers
+              return message; // For others
           }
       };
       window.addEventListener('beforeunload', handleBeforeUnload);
@@ -1022,8 +1024,10 @@ function App() {
             </div>
         )}
 
-        <div className="text-center py-12">
+        {/* REDUCED GAP: Changed py-12 to py-6 */}
+        <div className="text-center py-6">
             <h1 className="text-4xl font-bold text-gray-900 mb-6 flex items-center justify-center gap-4">
+               {/* MODIFIED: Show text title here instead of logo, even if logo is set */}
                {siteTitle}
             </h1>
             <div className="max-w-2xl mx-auto mb-8 px-4">
