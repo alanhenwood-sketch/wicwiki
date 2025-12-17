@@ -497,7 +497,9 @@ const VerseOfTheDayWidget = () => {
 };
 
 const FloatingNotesWidget = ({ article, noteContent, onChange, onExport, onShare, visible, setVisible, theme }) => {
-  const [isMinimized, setIsMinimized] = useState(false);
+  // CHANGED: Initialize minimized state to true so it starts collapsed
+  const [isMinimized, setIsMinimized] = useState(true);
+  
   if (!visible || !article) return null;
   if (isMinimized) return (<button onClick={() => setIsMinimized(false)} className={`fixed bottom-6 right-6 z-50 p-3 rounded-full shadow-xl transition-all hover:scale-105 flex items-center gap-2 animate-fadeIn border-2 border-white text-white ${theme.colors.bg}`}><StickyNote size={24} /></button>);
 
@@ -759,8 +761,7 @@ function App() {
   const [adminSortDirection, setAdminSortDirection] = useState('desc'); // 'asc', 'desc'
   const [customSections, setCustomSections] = useState([]);
   const [dbCategoryCounts, setDbCategoryCounts] = useState({});
-  const [bibleState, setBibleState] = useState({ book: "John", chapter: 1 });
-
+  
   // Updated: Session-based Notes (clears on exit, warns on close)
   const [notes, setNotes] = useState(() => { 
       try { 
