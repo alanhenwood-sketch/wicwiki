@@ -141,12 +141,11 @@ const ArticleSkeleton = () => (
   </div>
 );
 
-// --- Rich Text Editor (Fixed) ---
+// --- Rich Text Editor ---
 const RichTextEditor = ({ content, onChange, theme }) => {
   const editorRef = useRef(null);
   
   useEffect(() => {
-    // Robust content initialization
     if (editorRef.current && (content || "") !== editorRef.current.innerHTML && document.activeElement !== editorRef.current) {
         editorRef.current.innerHTML = content || "";
     }
@@ -176,6 +175,20 @@ const RichTextEditor = ({ content, onChange, theme }) => {
   );
 };
 
+// --- YouTube Embed Component ---
+const YouTubeEmbed = ({ videoId }) => (
+  <div className="my-8 w-full max-w-3xl mx-auto overflow-hidden rounded-xl shadow-lg border border-gray-200 bg-black relative" style={{ paddingBottom: '56.25%', height: 0 }}>
+    <iframe 
+      src={`https://www.youtube.com/embed/${videoId}`} 
+      title="YouTube video player"
+      className="absolute top-0 left-0 w-full h-full"
+      frameBorder="0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+      allowFullScreen 
+    />
+  </div>
+);
+
 // --- Verse Tooltip Component ---
 const VerseTooltip = ({ reference, theme }) => {
   const [text, setText] = useState(null);
@@ -186,7 +199,6 @@ const VerseTooltip = ({ reference, theme }) => {
     if (text || loading || error) return;
     setLoading(true);
     try {
-      // Clean reference further before fetching
       const cleanRef = reference.replace(/[.,;:]$/, '').replace(/\s+/g, ' ').trim();
       const res = await fetch(`https://bible-api.com/${encodeURIComponent(cleanRef)}?translation=kjv`);
       const data = await res.json();
@@ -206,115 +218,103 @@ const VerseTooltip = ({ reference, theme }) => {
   );
 };
 
-// --- HTML Renderer (Verse Strict Fix & Style) ---
+// --- HTML Renderer (Verse & YouTube Logic) ---
 const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
-  // VERY STRICT BIBLE REGEX: Whitelist Only + Abbreviations
+  // STRICT BIBLE REGEX (Whitelist + Abbreviations)
   const books = [
-    "Genesis", "Gen", "Ge", "Gn",
-    "Exodus", "Ex", "Exod",
-    "Leviticus", "Lev", "Le", "Lv",
-    "Numbers", "Num", "Nu", "Nm", "Nb",
-    "Deuteronomy", "Deut", "De", "Dt",
-    "Joshua", "Josh", "Jos", "Jsh",
-    "Judges", "Judg", "Jdg", "Jg", "Jdgs",
-    "Ruth", "Rth", "Ru",
+    "Genesis", "Gen", "Ge", "Gn", "Exodus", "Ex", "Exod", "Leviticus", "Lev", "Le", "Lv",
+    "Numbers", "Num", "Nu", "Nm", "Nb", "Deuteronomy", "Deut", "De", "Dt", "Joshua", "Josh", "Jos", "Jsh",
+    "Judges", "Judg", "Jdg", "Jg", "Jdgs", "Ruth", "Rth", "Ru",
     "1 Samuel", "1 Sam", "1 Sa", "1Sm", "1S", "I Samuel", "I Sam", "I Sa",
     "2 Samuel", "2 Sam", "2 Sa", "2Sm", "2S", "II Samuel", "II Sam", "II Sa",
     "1 Kings", "1 Kgs", "1 Ki", "1K", "I Kings", "I Kgs", "I Ki",
     "2 Kings", "2 Kgs", "2 Ki", "2K", "II Kings", "II Kgs", "II Ki",
     "1 Chronicles", "1 Chron", "1 Chr", "1 Ch", "I Chronicles", "I Chron", "I Chr",
     "2 Chronicles", "2 Chron", "2 Chr", "2 Ch", "II Chronicles", "II Chron", "II Chr",
-    "Ezra", "Ezr",
-    "Nehemiah", "Neh", "Ne",
-    "Esther", "Esth", "Est", "Es",
-    "Job", "Jb",
-    "Psalms?", "Ps", "Psa", "Psm", "Pss",
-    "Proverbs", "Prov", "Pro", "Prv", "Pr",
-    "Ecclesiastes", "Eccl", "Eccles", "Ecc", "Ec", "Qoh",
-    "Song of Solomon", "Song of Songs", "Song", "So", "Canticles", "Cant",
-    "Isaiah", "Isa", "Is",
-    "Jeremiah", "Jer", "Je", "Jr",
-    "Lamentations", "Lam", "La",
-    "Ezekiel", "Ezek", "Eze", "Ezk",
-    "Daniel", "Dan", "Da", "Dn",
-    "Hosea", "Hos", "Ho",
-    "Joel", "Jl",
-    "Amos", "Am",
-    "Obadiah", "Obad", "Ob",
-    "Jonah", "Jon", "Jnh",
-    "Micah", "Mic", "Mc",
-    "Nahum", "Nah", "Na",
-    "Habakkuk", "Hab", "Hb",
-    "Zephaniah", "Zeph", "Zep", "Zp",
-    "Haggai", "Hag", "Hg",
-    "Zechariah", "Zech", "Zec", "Zc",
-    "Malachi", "Mal", "Ml",
-    
-    // New Testament
-    "Matthew", "Matt", "Mt", "Mtt",
-    "Mark", "Mrk", "Mk", "Mr",
-    "Luke", "Luk", "Lk",
-    "John", "Jhn", "Jn",
-    "Acts", "Ac",
-    "Romans", "Rom", "Ro", "Rm",
+    "Ezra", "Ezr", "Nehemiah", "Neh", "Ne", "Esther", "Esth", "Est", "Es",
+    "Job", "Jb", "Psalms?", "Ps", "Psa", "Psm", "Pss", "Proverbs", "Prov", "Pro", "Prv", "Pr",
+    "Ecclesiastes", "Eccl", "Eccles", "Ecc", "Ec", "Qoh", "Song of Solomon", "Song of Songs", "Song", "So", "Canticles", "Cant",
+    "Isaiah", "Isa", "Is", "Jeremiah", "Jer", "Je", "Jr", "Lamentations", "Lam", "La",
+    "Ezekiel", "Ezek", "Eze", "Ezk", "Daniel", "Dan", "Da", "Dn", "Hosea", "Hos", "Ho",
+    "Joel", "Jl", "Amos", "Am", "Obadiah", "Obad", "Ob", "Jonah", "Jon", "Jnh",
+    "Micah", "Mic", "Mc", "Nahum", "Nah", "Na", "Habakkuk", "Hab", "Hb",
+    "Zephaniah", "Zeph", "Zep", "Zp", "Haggai", "Hag", "Hg", "Zechariah", "Zech", "Zec", "Zc",
+    "Malachi", "Mal", "Ml", "Matthew", "Matt", "Mt", "Mtt", "Mark", "Mrk", "Mk", "Mr",
+    "Luke", "Luk", "Lk", "John", "Jhn", "Jn", "Acts", "Ac", "Romans", "Rom", "Ro", "Rm",
     "1 Corinthians", "1 Cor", "1 Co", "I Corinthians", "I Cor", "I Co",
     "2 Corinthians", "2 Cor", "2 Co", "II Corinthians", "II Cor", "II Co",
-    "Galatians", "Gal", "Ga",
-    "Ephesians", "Eph", "Ep",
-    "Philippians", "Phil", "Php", "Pp",
-    "Colossians", "Col", "Co",
-    "1 Thessalonians", "1 Thess", "1 Th", "I Thessalonians", "I Thess", "I Th",
+    "Galatians", "Gal", "Ga", "Ephesians", "Eph", "Ep", "Philippians", "Phil", "Php", "Pp",
+    "Colossians", "Col", "Co", "1 Thessalonians", "1 Thess", "1 Th", "I Thessalonians", "I Thess", "I Th",
     "2 Thessalonians", "2 Thess", "2 Th", "II Thessalonians", "II Thess", "II Th",
     "1 Timothy", "1 Tim", "1 Ti", "I Timothy", "I Tim", "I Ti",
     "2 Timothy", "2 Tim", "2 Ti", "II Timothy", "II Tim", "II Ti",
-    "Titus", "Tit", "Ti",
-    "Philemon", "Philem", "Phm", "Pm",
-    "Hebrews", "Heb",
-    "James", "Jas", "Jm",
-    "1 Peter", "1 Pet", "1 Pe", "1 Pt", "I Peter", "I Pet", "I Pe",
+    "Titus", "Tit", "Ti", "Philemon", "Philem", "Phm", "Pm", "Hebrews", "Heb",
+    "James", "Jas", "Jm", "1 Peter", "1 Pet", "1 Pe", "1 Pt", "I Peter", "I Pet", "I Pe",
     "2 Peter", "2 Pet", "2 Pe", "2 Pt", "II Peter", "II Pet", "II Pe",
-    "1 John", "1 Jn", "1 J", "I John", "I Jn",
-    "2 John", "2 Jn", "2 J", "II John", "II Jn",
-    "3 John", "3 Jn", "3 J", "III John", "III Jn",
-    "Jude", "Jd",
-    "Revelation", "Rev", "Rv"
+    "1 John", "1 Jn", "1 J", "I John", "I Jn", "2 John", "2 Jn", "2 J", "II John", "II Jn",
+    "3 John", "3 Jn", "3 J", "III John", "III Jn", "Jude", "Jd", "Revelation", "Rev", "Rv"
   ];
   
   const sortedBooks = books.sort((a,b) => b.length - a.length).join("|");
-  // Matches: [Boundary][Book Name][Spaces][Chapter]:[Verse][Optional Range][Boundary]
   const verseRegex = new RegExp(`(\\b(?:${sortedBooks})\\s+\\d+:\\d+(?:[-–,]\\d+)*\\b)`, 'gi');
   
+  // YOUTUBE REGEX: Matches standard URL formats
+  const youtubeRegex = /\b(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:\S+)?/g;
+  
   const renderNodes = (nodes) => Array.from(nodes).map((node, i) => {
+      // --- TEXT NODE PROCESSING ---
       if (node.nodeType === 3) {
         const text = node.textContent;
         if(!text.trim()) return null;
         
-        const parts = text.split(verseRegex);
+        // 1. Split by YouTube URL to find embeds
+        const parts = text.split(youtubeRegex);
+        
         return (
           <React.Fragment key={i}>
             {parts.map((part, index) => {
-               if (verseRegex.test(part)) {
-                   return <VerseTooltip key={index} reference={part} theme={theme} />;
+               // Odd index = Captured YouTube ID
+               if (index % 2 === 1 && part.length === 11) {
+                   return <YouTubeEmbed key={index} videoId={part} />;
                }
-               return <span key={index}>{part}</span>;
+               
+               // Even index = Normal Text -> Process for Verses
+               const verseParts = part.split(verseRegex);
+               return verseParts.map((vPart, vIndex) => {
+                   if (verseRegex.test(vPart)) {
+                       return <VerseTooltip key={`${index}-${vIndex}`} reference={vPart} theme={theme} />;
+                   }
+                   return <span key={`${index}-${vIndex}`}>{vPart}</span>;
+               });
             })}
           </React.Fragment>
         );
       }
       
+      // --- ELEMENT NODE PROCESSING ---
       if (node.nodeType === 1) {
         const tagName = node.tagName.toLowerCase();
         if (['script','style'].includes(tagName)) return null;
+        
+        // AUTO-CONVERT LINKS: Check if <a> tag is a YouTube Link
+        if (tagName === 'a') {
+            const href = node.getAttribute('href');
+            const ytMatch = href && href.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/);
+            if (ytMatch) {
+                return <YouTubeEmbed key={i} videoId={ytMatch[1]} />;
+            }
+        }
+
         const props = { key: i };
         
         if (node.attributes) Array.from(node.attributes).forEach(attr => { 
-            // PREVENT CRASH: Skip 'style' attribute
-            if (attr.name === 'style') return;
+            if (attr.name === 'style') return; // Prevent React Error #62
             if (attr.name === 'class') { props.className = attr.value; return; }
             if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; 
         });
 
         let baseClass = props.className || '';
+        // Typography styles
         if (tagName === 'p') baseClass += ' mb-6 leading-relaxed text-gray-800 text-base md:text-lg';
         if (tagName === 'h1') baseClass += ' text-3xl font-extrabold mt-10 mb-6 text-gray-900 border-b pb-4';
         if (tagName === 'h2') baseClass += ' text-2xl font-bold mt-8 mb-4 text-gray-800 border-b pb-2 border-gray-100';
@@ -328,6 +328,7 @@ const HtmlContentRenderer = ({ html, theme, onNavigate }) => {
         
         props.className = baseClass;
         
+        // Link handling
         if (props['data-wiki-link'] && onNavigate) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); onNavigate(props['data-wiki-link']); };
           props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold bg-indigo-50 px-1 rounded`;
@@ -1412,7 +1413,16 @@ function App() {
 
   return (
     <div className={`min-h-screen bg-gray-50 ${currentTheme.font}`}>
-      {notification && <div className="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded shadow-lg z-50">{notification.message}</div>}
+      {/* IMPROVED NOTIFICATION TICKER */}
+      {notification && (
+        <div className="fixed top-6 right-6 z-[100] animate-fadeIn">
+            <div className="bg-slate-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700/50 backdrop-blur-sm">
+            <CheckCircle className="text-emerald-400" size={20} />
+            <span className="font-medium">{notification.message}</span>
+            </div>
+        </div>
+      )}
+
       <header className="sticky top-0 bg-white border-b z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
            <div className="flex items-center gap-2 font-bold text-xl cursor-pointer" onClick={()=>setView('home')}>
