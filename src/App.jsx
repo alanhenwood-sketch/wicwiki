@@ -459,8 +459,20 @@ function App() {
   const [adminSearchQuery, setAdminSearchQuery] = useState("");
   const [customSections, setCustomSections] = useState([]);
   const [dbCategoryCounts, setDbCategoryCounts] = useState({});
+  
+  // Updated: Session-based Notes (clears on exit, warns on close)
   const [notes, setNotes] = useState(() => { 
-      try { return (typeof window !== 'undefined') ? JSON.parse(localStorage.getItem('theologue_notes')) || {} : {}; } 
+      try { 
+        if (typeof window === 'undefined') return {};
+        // Migration: If user had old persistent notes, move them to session
+        const localNotes = localStorage.getItem('theologue_notes');
+        if (localNotes) {
+            localStorage.removeItem('theologue_notes');
+            sessionStorage.setItem('theologue_notes', localNotes);
+            return JSON.parse(localNotes);
+        }
+        return JSON.parse(sessionStorage.getItem('theologue_notes')) || {}; 
+      } 
       catch { return {}; } 
   });
   
@@ -553,7 +565,28 @@ function App() {
     return () => { unsub(); unsubSections(); unsubStats(); };
   }, [user]);
 
-  useEffect(() => { if (typeof window !== 'undefined') localStorage.setItem('theologue_notes', JSON.stringify(notes)); }, [notes]);
+  // Ref to hold notes for listener
+  const notesRef = useRef(notes);
+  
+  // Update ref and storage when notes change
+  useEffect(() => { 
+      notesRef.current = notes;
+      if (typeof window !== 'undefined') {
+          sessionStorage.setItem('theologue_notes', JSON.stringify(notes)); 
+      }
+  }, [notes]);
+
+  // Warning on Tab Close/Exit
+  useEffect(() => {
+      const handleBeforeUnload = (e) => {
+          if (Object.keys(notesRef.current).length > 0) {
+              e.preventDefault();
+              e.returnValue = ''; // Trigger browser default warning dialog
+          }
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   // --- Memos ---
   const activeSections = useMemo(() => {
@@ -668,7 +701,7 @@ function App() {
       e.preventDefault();
       setLoginError("");
       if(loginStep === "password") {
-          if(passwordInput === "admin123") { setLoginStep('mfa'); showNotification("Code: 123456"); }
+          if(passwordInput === "admin123") { setLoginStep('mfa'); showNotification("Code: Accepted"); }
           else setLoginError("Incorrect password");
       } else {
           if(mfaInput === "123456") { setIsAuthenticated(true); setPasswordInput(""); setMfaInput(""); setLoginStep('password'); }
@@ -979,9 +1012,19 @@ function App() {
   // --- Render Sections ---
   const renderHome = () => (
       <div className={`max-w-4xl mx-auto space-y-12 animate-fadeIn ${currentTheme.font} ${currentTheme.textSize}`}>
+        {/* IMPROVED NOTIFICATION TICKER */}
+        {notification && (
+            <div className="fixed top-6 right-6 z-[100] animate-fadeIn">
+                <div className="bg-slate-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700/50 backdrop-blur-sm">
+                <CheckCircle className="text-emerald-400" size={20} />
+                <span className="font-medium">{notification.message}</span>
+                </div>
+            </div>
+        )}
+
         <div className="text-center py-12">
             <h1 className="text-4xl font-bold text-gray-900 mb-6 flex items-center justify-center gap-4">
-               {siteLogo ? <img src={siteLogo} alt={siteTitle} className="h-16 object-contain" /> : siteTitle}
+               {siteTitle}
             </h1>
             <div className="max-w-2xl mx-auto mb-8 px-4">
               <div className={`relative rounded-2xl ${currentTheme.colors.bgSoft} border ${currentTheme.colors.border} shadow-sm text-center transition-all duration-300 ${isWelcomeMinimized ? 'p-4' : 'p-6'}`}>
