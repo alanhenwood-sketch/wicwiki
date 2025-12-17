@@ -606,6 +606,10 @@ function App() {
   const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
   const [loginStep, setLoginStep] = useState('password');
   const [mfaInput, setMfaInput] = useState("");
+  
+  // New State for delete confirmation
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null); // { type: 'section' | 'article', id: string }
+
 
   // Import Refs
   const pagesRef = useRef(null);
@@ -1013,7 +1017,7 @@ function App() {
   };
 
   const handleDeleteSection = async (id) => {
-      if(!confirm("Delete this section?")) return;
+      // Direct delete for now to ensure it works, or simple UI toggle
       try {
           await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sections', id));
           showNotification("Section deleted");
