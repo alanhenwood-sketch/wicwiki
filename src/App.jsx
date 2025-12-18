@@ -950,6 +950,8 @@ function App() {
   const pagesRef = useRef(null);
   const importCursorRef = useRef(0);
   const abortImportRef = useRef(false);
+  // NEW: Add a ref to control deletion loop explicitly
+  const abortDeleteRef = useRef(false);
   const [importState, setImportState] = useState('idle');
 
   // Computed
@@ -1487,9 +1489,19 @@ function App() {
     if(!confirm("DANGER: This will delete ALL articles. This cannot be undone. Are you sure?")) return;
     if(!confirm("Are you REALLY sure?")) return;
     
+    // Stop any running imports to prevent conflict
+    abortImportRef.current = true;
+    abortDeleteRef.current = false;
+    
     setImportStatus("Deleting all articles...");
     try {
         const deleteBatch = async () => {
+            // Check for manual stop
+            if (abortDeleteRef.current) {
+                setImportStatus("Deletion Stopped.");
+                return;
+            }
+
             const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
             // FIX: Only fetch 200 at a time to prevent crash
             const q = query(articlesRef, limit(200));
@@ -1620,13 +1632,18 @@ function App() {
   // --- FIXED: Import Logic (Batch Size + Pause/Resume) ---
   const runImport = async (pages) => {
       if(!db) return;
+      
+      // Stop any running deletions to avoid conflict
+      abortDeleteRef.current = true;
+      abortImportRef.current = false;
+
       let i = importCursorRef.current;
       const total = pages.length;
       const limit = 100000;
       let batchCounts = {};
       
-      // OPTIMIZATION: Decreased batch size to 50 to prevent 10MB payload error
-      const BATCH_SIZE = 50; 
+      // OPTIMIZATION: Decreased batch size to 20 to prevent UI lag on large files
+      const BATCH_SIZE = 20; 
       
       setImportStatus(`Importing ${i} / ${total}`);
       setImportProgress(0); 
