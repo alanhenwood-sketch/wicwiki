@@ -36,13 +36,17 @@ import {
   writeBatch,
   query,
   orderBy,
-  limit
+  limit,
+  startAfter,
+  where,
+  startAt,
+  endAt
 } from 'firebase/firestore';
 
 // --- CONFIGURATION SECTION ---
 // 1. FIREBASE CONFIG
 const liveFirebaseConfig = {
-  apiKey: "AIzaSyC45o7fJuF_akzIZ0eBo1UGGx78ZCnCEk4", // Replace with your new Firebase API Key
+  apiKey: "AIzaSyC45o7fJuF_akzIZ0eBo1UGGx78ZCnCEk4", 
   authDomain: "wicwiki-24d11.firebaseapp.com",
   projectId: "wicwiki-24d11",
   storageBucket: "wicwiki-24d11.firebasestorage.app",
@@ -51,12 +55,10 @@ const liveFirebaseConfig = {
 };
 
 // 2. GEMINI AI CONFIG
-// In this environment, we use the injected key.
-const GEMINI_API_KEY = "AIzaSyCWAdKz-R4FZ7ftUoFa0Atkjq_ery3uB7M"; 
+const GEMINI_API_KEY = ""; 
 
 // --- HELPER FUNCTIONS ---
 
-// Helper to compress image
 const compressImage = (file, maxWidth = 600, quality = 0.7) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -68,12 +70,10 @@ const compressImage = (file, maxWidth = 600, quality = 0.7) => {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
-        
         if (width > maxWidth) {
           height = (height * maxWidth) / width;
           width = maxWidth;
         }
-        
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
@@ -84,7 +84,6 @@ const compressImage = (file, maxWidth = 600, quality = 0.7) => {
   });
 };
 
-// Helper to parse style string into object for React
 const parseStyleString = (styleString) => {
   if (!styleString) return {};
   return styleString.split(';').reduce((acc, style) => {
@@ -106,49 +105,27 @@ class ErrorBoundary extends React.Component {
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
   componentDidCatch(error, errorInfo) { console.error("Uncaught error:", error, errorInfo); }
   render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-8 font-sans text-center dark:text-white">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
-          <p className="mb-4">Please verify your Config keys in <code>src/App.jsx</code></p>
-          <pre className="bg-gray-100 dark:bg-gray-800 p-4 rounded text-left overflow-auto text-sm text-red-800 dark:text-red-400 border border-red-200 dark:border-red-900">
-            {this.state.error && this.state.error.toString()}
-          </pre>
-        </div>
-      );
-    }
+    if (this.state.hasError) return <div className="p-8 text-center text-red-600">Something went wrong. Refresh?</div>;
     return this.props.children;
   }
 }
 
 // --- INITIALIZATION ---
 let app, auth, db;
-let initError = null;
-
 try {
-  const envConfig = (typeof window !== 'undefined' && window.__firebase_config) 
-    ? JSON.parse(window.__firebase_config) 
-    : null;
-  // Fallback to local config if env not present, but prioritize env if available
+  const envConfig = (typeof window !== 'undefined' && window.__firebase_config) ? JSON.parse(window.__firebase_config) : null;
   const configToUse = envConfig || liveFirebaseConfig;
-
-  // Check if user has replaced the placeholder
-  if (configToUse.apiKey === "PASTE_YOUR_API_KEY_HERE") {
-    initError = "CONFIGURATION_NEEDED";
-  } else {
+  if (configToUse.apiKey !== "PASTE_YOUR_API_KEY_HERE") {
     app = initializeApp(configToUse);
     auth = getAuth(app);
     db = getFirestore(app);
   }
-} catch (e) {
-  console.error("Firebase init failed:", e);
-  initError = e.message;
-}
+} catch (e) { console.error("Init failed:", e); }
 
 const rawAppId = (typeof window !== 'undefined' && window.__app_id) ? window.__app_id : 'production-v1';
 const appId = rawAppId.replace(/[\/\\#\?]/g, '_'); 
 
-// --- Theme Config ---
+// --- Constants ---
 const FONTS = { sans: "font-sans", serif: "font-serif", mono: "font-mono" };
 const TEXT_SIZES = { sm: "text-sm", base: "text-base", lg: "text-lg" };
 const COLORS = {
@@ -161,25 +138,11 @@ const COLORS = {
 };
 const TEXT_COLORS = { gray: "text-gray-600 dark:text-gray-300", slate: "text-slate-600 dark:text-slate-300", zinc: "text-zinc-600 dark:text-zinc-300", neutral: "text-neutral-600 dark:text-neutral-300" };
 
-const POPULAR_VERSE_REFS = [
-  "John 3:16", "Philippians 4:13", "Psalm 23:1", "Romans 8:28", "Jeremiah 29:11",
-  "Proverbs 3:5-6", "Isaiah 40:31", "Joshua 1:9", "Romans 12:2", "Galatians 5:22-23",
-  "Hebrews 11:1", "2 Timothy 1:7", "1 Corinthians 13:4-7", "Matthew 28:19-20", "Psalm 46:10",
-  "John 14:6", "Matthew 11:28", "Psalm 119:105", "Ephesians 2:8-9", "Romans 3:23"
-];
-
-const CANONICAL_BOOKS = [
-  "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "Joshua", "Judges", "Ruth",
-  "1 Samuel", "2 Samuel", "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra", "Nehemiah", "Esther",
-  "Job", "Psalms", "Proverbs", "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations", "Ezekiel", "Daniel",
-  "Hosea", "Joel", "Amos", "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi",
-  "Matthew", "Mark", "Luke", "John", "Acts", "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians", "Philippians", "Colossians",
-  "1 Thessalonians", "2 Thessalonians", "1 Timothy", "2 Timothy", "Titus", "Philemon", "Hebrews", "James",
-  "1 Peter", "2 Peter", "1 John", "2 John", "3 John", "Jude", "Revelation"
-];
+const POPULAR_VERSE_REFS = ["John 3:16", "Philippians 4:13", "Psalm 23:1", "Romans 8:28", "Jeremiah 29:11", "Proverbs 3:5-6", "Isaiah 40:31", "Joshua 1:9", "Romans 12:2", "Galatians 5:22-23"];
+const CANONICAL_BOOKS = ["Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy", "Joshua", "Judges", "Ruth", "1 Samuel", "2 Samuel", "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra", "Nehemiah", "Esther", "Job", "Psalms", "Proverbs", "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations", "Ezekiel", "Daniel", "Hosea", "Joel", "Amos", "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk", "Zephaniah", "Haggai", "Zechariah", "Malachi", "Matthew", "Mark", "Luke", "John", "Acts", "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians", "Philippians", "Colossians", "1 Thessalonians", "2 Thessalonians", "1 Timothy", "2 Timothy", "Titus", "Philemon", "Hebrews", "James", "1 Peter", "2 Peter", "1 John", "2 John", "3 John", "Jude", "Revelation"];
 
 // --- Components ---
-const NavItem = ({ icon: Icon, label, active, onClick, theme, title, colorClass, bgClass }) => {
+const NavItem = ({ icon: Icon, label, active, onClick, theme }) => {
   const textCol = theme.colors.text;
   const bgCol = theme.colors.bgSoft;
   return (
@@ -193,363 +156,98 @@ const Badge = ({ children, theme, onClick }) => (
   <span onClick={(e) => { if (onClick) { e.stopPropagation(); onClick(); } }} className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${theme.colors.bgSoft} ${theme.colors.text} ${onClick ? 'cursor-pointer hover:opacity-80 hover:underline' : ''}`} title={onClick ? "View category" : ""}>{children}</span>
 );
 
-const Skeleton = ({ className }) => <div className={`animate-pulse bg-gray-200 dark:bg-slate-700 rounded ${className}`}></div>;
-const ArticleSkeleton = () => (
-  <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-100 dark:border-slate-700 shadow-sm">
-    <div className="flex justify-between items-start mb-4"><Skeleton className="h-6 w-2/3 mb-2" /><Skeleton className="h-5 w-20" /></div>
-    <div className="space-y-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /></div>
-  </div>
-);
-
-// --- Rich Text Editor (Enhanced) ---
 const RichTextEditor = ({ content, onChange, theme }) => {
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
-   
+  
   useEffect(() => {
     if (editorRef.current && (content || "") !== editorRef.current.innerHTML && document.activeElement !== editorRef.current) {
         editorRef.current.innerHTML = content || "";
     }
   }, [content]);
 
-  const exec = (cmd, val = null) => { 
-    document.execCommand(cmd, false, val); 
-    if (editorRef.current) onChange(editorRef.current.innerHTML); 
-  };
-
+  const exec = (cmd, val = null) => { document.execCommand(cmd, false, val); if (editorRef.current) onChange(editorRef.current.innerHTML); };
+  
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    try {
-        const base64 = await compressImage(file, 600, 0.7);
-        exec('insertImage', base64);
-    } catch (err) {
-        console.error("Image upload failed", err);
-        alert("Failed to upload image.");
-    }
-    // Reset input
+    try { const base64 = await compressImage(file, 600, 0.7); exec('insertImage', base64); } 
+    catch (err) { alert("Failed to upload image."); }
     if(fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleInsertVideo = () => {
-      const url = prompt("Enter YouTube URL (e.g. https://youtube.com/watch?v=...):");
-      if (url) {
-          // We insert the URL as text. The HtmlContentRenderer detects this regex and converts it to an embed automatically.
-          // Adding a newline to ensure it sits on its own line for better detection/rendering
-          exec('insertHTML', `<br/>${url}<br/>`);
-      }
-  };
-
-  const handleInsertLink = () => {
-      const url = prompt("Enter URL:");
-      if (url) exec('createLink', url);
+      const url = prompt("Enter YouTube URL:");
+      if (url) exec('insertHTML', `<br/>${url}<br/>`);
   };
 
   return (
     <div className={`border border-gray-300 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-slate-800 shadow-sm focus-within:ring-2 ${theme.colors.ring} focus-within:border-transparent`}>
       <div className="flex gap-1 p-2 bg-gray-50 dark:bg-slate-700/50 border-b border-gray-200 dark:border-slate-700 flex-wrap items-center">
-        
-        {/* Basic Formatting */}
         <div className="flex gap-1 border-r border-gray-300 dark:border-slate-600 pr-2 mr-2">
-            <button type="button" onClick={(e)=>{e.preventDefault(); exec('bold');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Bold"><Bold size={16}/></button>
-            <button type="button" onClick={(e)=>{e.preventDefault(); exec('italic');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Italic"><Italic size={16}/></button>
-            <button type="button" onClick={(e)=>{e.preventDefault(); exec('underline');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Underline"><Underline size={16}/></button>
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('bold');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300"><Bold size={16}/></button>
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('italic');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300"><Italic size={16}/></button>
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('underline');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300"><Underline size={16}/></button>
         </div>
-
-        {/* Fonts & Colors */}
         <div className="flex gap-2 items-center border-r border-gray-300 dark:border-slate-600 pr-2 mr-2">
             <select onChange={(e) => exec('fontName', e.target.value)} className="text-xs p-1 rounded border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 dark:text-white w-20">
-                <option value="Arial">Arial</option>
-                <option value="Courier New">Courier</option>
-                <option value="Georgia">Georgia</option>
-                <option value="Times New Roman">Times</option>
-                <option value="Verdana">Verdana</option>
+                <option value="Arial">Arial</option><option value="Courier New">Courier</option><option value="Georgia">Georgia</option><option value="Times New Roman">Times</option><option value="Verdana">Verdana</option>
             </select>
-            
             <div className="relative group flex items-center" title="Text Color">
                 <Palette size={16} className="text-gray-500 dark:text-slate-400 absolute pointer-events-none left-1"/>
-                <input 
-                    type="color" 
-                    onChange={(e) => exec('foreColor', e.target.value)} 
-                    className="w-8 h-6 pl-5 opacity-0 absolute cursor-pointer"
-                />
+                <input type="color" onChange={(e) => exec('foreColor', e.target.value)} className="w-8 h-6 pl-5 opacity-0 absolute cursor-pointer"/>
                 <div className="w-6 h-4 bg-gradient-to-r from-red-500 via-green-500 to-blue-500 rounded ml-1"></div>
             </div>
         </div>
-
-        {/* Structure */}
         <div className="flex gap-1 border-r border-gray-300 dark:border-slate-600 pr-2 mr-2">
-            <button type="button" onClick={(e)=>{e.preventDefault(); exec('formatBlock','H3');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Heading"><Type size={16}/></button>
-            <button type="button" onClick={(e)=>{e.preventDefault(); exec('insertUnorderedList');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Bullet List"><List size={16}/></button>
-            <button type="button" onClick={(e)=>{e.preventDefault(); exec('insertOrderedList');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Numbered List"><List size={16} className="rotate-180"/></button>
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('formatBlock','H3');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300"><Type size={16}/></button>
+            <button type="button" onClick={(e)=>{e.preventDefault(); exec('insertUnorderedList');}} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300"><List size={16}/></button>
         </div>
-
-        {/* Media */}
         <div className="flex gap-1">
-            <button type="button" onClick={handleInsertLink} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Insert Link"><LinkIcon size={16}/></button>
-            
-            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Insert Image">
-                <ImageIcon size={16}/>
-            </button>
-            <input 
-                type="file" 
-                ref={fileInputRef} 
-                className="hidden" 
-                accept="image/*" 
-                onChange={handleImageUpload}
-            />
-
-            <button type="button" onClick={handleInsertVideo} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300" title="Insert Video"><Youtube size={16}/></button>
+            <button type="button" onClick={() => exec('createLink', prompt("Enter URL:"))} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300"><LinkIcon size={16}/></button>
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300"><ImageIcon size={16}/></button>
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload}/>
+            <button type="button" onClick={handleInsertVideo} className="p-1.5 hover:bg-gray-200 dark:hover:bg-slate-600 rounded text-gray-700 dark:text-slate-300"><Youtube size={16}/></button>
         </div>
-
       </div>
-      <div 
-        ref={editorRef} 
-        contentEditable 
-        className={`p-4 outline-none max-w-none text-gray-800 dark:text-slate-100 ${theme.font} text-base leading-relaxed`}
-        style={{ minHeight: '300px' }}
-        onInput={e => onChange(e.currentTarget.innerHTML)} 
-      />
+      <div ref={editorRef} contentEditable className={`p-4 outline-none max-w-none text-gray-800 dark:text-slate-100 ${theme.font} text-base leading-relaxed`} style={{ minHeight: '300px' }} onInput={e => onChange(e.currentTarget.innerHTML)} />
     </div>
   );
 };
 
-// --- YouTube Embed Component ---
-const YouTubeEmbed = ({ videoId }) => (
-  <div className="my-8 w-full max-w-3xl mx-auto overflow-hidden rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 bg-black relative" style={{ paddingBottom: '56.25%', height: 0 }}>
-    <iframe 
-      src={`https://www.youtube.com/embed/${videoId}`} 
-      title="YouTube video player"
-      className="absolute top-0 left-0 w-full h-full"
-      frameBorder="0"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-      allowFullScreen 
-    />
-  </div>
-);
-
-// --- Bible Reader Component (Shared State) ---
-const BibleReader = ({ theme, book, chapter, setBook, setChapter }) => {
-    const [text, setText] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-
-    useEffect(() => {
-        let active = true;
-        const fetchChapter = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-                const res = await fetch(`https://bible-api.com/${book}+${chapter}?translation=kjv`);
-                if (!res.ok) throw new Error("Chapter not found");
-                const data = await res.json();
-                if (active) setText(data.text || "Text unavailable.");
-            } catch (e) {
-                if (active) {
-                    setText("");
-                    setError("Could not load chapter. It may not exist.");
-                }
-            }
-            if (active) setLoading(false);
-        };
-        fetchChapter();
-        return () => { active = false; };
-    }, [book, chapter]);
-
-    return (
-        <div className="flex flex-col h-[70vh] bg-amber-50 dark:bg-amber-950/40 rounded-xl overflow-hidden border border-amber-200 dark:border-amber-800 shadow-sm">
-            <div className="flex items-center gap-2 p-3 bg-amber-100/50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800">
-                 <select 
-                    value={book} 
-                    onChange={e => {setBook(e.target.value); setChapter(1);}} 
-                    className="flex-1 p-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-white dark:bg-slate-800 text-sm font-medium text-amber-900 dark:text-amber-100 focus:ring-2 focus:ring-amber-400 focus:outline-none"
-                  >
-                    {CANONICAL_BOOKS.map(b => <option key={b} value={b}>{b}</option>)}
-                  </select>
-                  <div className="flex items-center bg-white dark:bg-slate-800 rounded-lg border border-amber-200 dark:border-amber-700 overflow-hidden">
-                    <span className="px-2 text-xs text-amber-500 font-bold uppercase">Ch</span>
-                    <input 
-                        type="number" 
-                        value={chapter} 
-                        onChange={e => setChapter(Math.max(1, parseInt(e.target.value) || 1))} 
-                        className="w-12 p-2 text-sm font-bold text-center text-amber-900 dark:text-amber-100 focus:outline-none bg-transparent" 
-                    />
-                  </div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-5 text-amber-900/90 dark:text-amber-100/90 font-serif leading-loose text-base bg-amber-50/30 dark:bg-transparent">
-                {loading ? (
-                    <div className="flex flex-col items-center justify-center h-40 gap-3 text-amber-400">
-                        <Loader className="animate-spin" size={24} />
-                        <span className="text-sm">Loading Scripture...</span>
-                    </div>
-                ) : error ? (
-                    <div className="text-center py-10 text-amber-800/60 dark:text-amber-200/60 italic">{error}</div>
-                ) : (
-                    <div>
-                        <h3 className="text-xl font-bold text-amber-900 dark:text-amber-100 mb-4 text-center border-b border-amber-200/50 dark:border-amber-800/50 pb-2">{book} {chapter}</h3>
-                        {text.split('\n').map((paragraph, idx) => (
-                             <p key={idx} className="mb-4">{paragraph}</p>
-                        ))}
-                    </div>
-                )}
-            </div>
-            
-            <div className="p-3 border-t border-amber-200 dark:border-amber-800 bg-amber-100/50 dark:bg-amber-900/30 flex justify-between gap-3">
-                <button 
-                    onClick={()=>setChapter(c=>Math.max(1,c-1))} 
-                    disabled={chapter<=1}
-                    className="flex-1 py-2 px-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-lg text-sm font-bold text-amber-800 dark:text-amber-100 hover:bg-amber-50 dark:hover:bg-amber-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                >
-                    <ChevronLeft size={16}/> Prev
-                </button>
-                <button 
-                    onClick={()=>setChapter(c=>c+1)}
-                    className="flex-1 py-2 px-3 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-700 rounded-lg text-sm font-bold text-amber-800 dark:text-amber-100 hover:bg-amber-50 dark:hover:bg-amber-900/50 transition-colors flex items-center justify-center gap-2"
-                >
-                    Next <ChevronRight size={16}/>
-                </button>
-            </div>
-        </div>
-    );
-};
-
-// --- Verse Tooltip Component ---
-const VerseTooltip = ({ reference, theme, onOpenBible }) => {
-  const [text, setText] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-
-  const handleMouseEnter = async () => {
-    if (text || loading || error) return;
-    setLoading(true);
-    try {
-      const cleanRef = reference.replace(/[.,;:]$/, '').replace(/\s+/g, ' ').trim();
-      const res = await fetch(`https://bible-api.com/${encodeURIComponent(cleanRef)}?translation=kjv`);
-      const data = await res.json();
-      if (data && data.text) setText(data.text); else setError(true);
-    } catch (e) { setError(true); } finally { setLoading(false); }
-  };
-
-  return (
-    <span 
-      className={`relative group cursor-pointer font-bold border-b-2 border-dotted inline-block ${theme.colors.text} border-indigo-200 dark:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors rounded px-0.5`} 
-      onMouseEnter={handleMouseEnter}
-      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenBible(reference); }}
-      title="Click to open in Bible reader"
-    >
-      {reference}
-      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-4 bg-slate-900 text-white text-sm rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[100] text-left leading-normal">
-        {loading && "Loading..."}
-        {error && "Verse unavailable."}
-        {text && <i>"{text.trim()}"</i>}
-        <span className="block mt-2 text-[10px] text-gray-400 font-sans uppercase tracking-widest border-t border-gray-700 pt-2">Click to read chapter</span>
-      </span>
-    </span>
-  );
-};
-
-// --- HTML Renderer (Verse & YouTube Logic) ---
 const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
-  // STRICT BIBLE REGEX (Whitelist + Abbreviations)
-  const books = [
-    "Genesis", "Gen", "Ge", "Gn", "Exodus", "Ex", "Exod", "Leviticus", "Lev", "Le", "Lv",
-    "Numbers", "Num", "Nu", "Nm", "Nb", "Deuteronomy", "Deut", "De", "Dt", "Joshua", "Josh", "Jos", "Jsh",
-    "Judges", "Judg", "Jdg", "Jg", "Jdgs", "Ruth", "Rth", "Ru",
-    "1 Samuel", "1 Sam", "1 Sa", "1Sm", "1S", "I Samuel", "I Sam", "I Sa",
-    "2 Samuel", "2 Sam", "2 Sa", "2Sm", "2S", "II Samuel", "II Sam", "II Sa",
-    "1 Kings", "1 Kgs", "1 Ki", "1K", "I Kings", "I Kgs", "I Ki",
-    "2 Kings", "2 Kgs", "2 Ki", "2K", "II Kings", "II Kgs", "II Ki",
-    "1 Chronicles", "1 Chron", "1 Chr", "1 Ch", "I Chronicles", "I Chron", "I Chr",
-    "2 Chronicles", "2 Chron", "2 Chr", "2 Ch", "II Chronicles", "II Chron", "II Chr",
-    "Ezra", "Ezr", "Nehemiah", "Neh", "Ne", "Esther", "Esth", "Est", "Es",
-    "Job", "Jb", "Psalms?", "Ps", "Psa", "Psm", "Pss", "Proverbs", "Prov", "Pro", "Prv", "Pr",
-    "Ecclesiastes", "Eccl", "Eccles", "Ecc", "Ec", "Qoh", "Song of Solomon", "Song of Songs", "Song", "So", "Canticles", "Cant",
-    "Isaiah", "Isa", "Is", "Jeremiah", "Jer", "Je", "Jr", "Lamentations", "Lam", "La",
-    "Ezekiel", "Ezek", "Eze", "Ezk", "Daniel", "Dan", "Da", "Dn", "Hosea", "Hos", "Ho",
-    "Joel", "Jl", "Amos", "Am", "Obadiah", "Obad", "Ob", "Jonah", "Jon", "Jnh",
-    "Micah", "Mic", "Mc", "Nahum", "Nah", "Na", "Habakkuk", "Hab", "Hb",
-    "Zephaniah", "Zeph", "Zep", "Zp", "Haggai", "Hag", "Hg", "Zechariah", "Zech", "Zec", "Zc",
-    "Malachi", "Mal", "Ml", "Matthew", "Matt", "Mt", "Mtt", "Mark", "Mrk", "Mk", "Mr",
-    "Luke", "Luk", "Lk", "John", "Jhn", "Jn", "Acts", "Ac", "Romans", "Rom", "Ro", "Rm",
-    "1 Corinthians", "1 Cor", "1 Co", "I Corinthians", "I Cor", "I Co",
-    "2 Corinthians", "2 Cor", "2 Co", "II Corinthians", "II Cor", "II Co",
-    "Galatians", "Gal", "Ga", "Ephesians", "Eph", "Ep", "Philippians", "Phil", "Php", "Pp",
-    "Colossians", "Col", "Co", "1 Thessalonians", "1 Thess", "1 Th", "I Thessalonians", "I Thess", "I Th",
-    "2 Thessalonians", "2 Thess", "2 Th", "II Thessalonians", "II Thess", "II Th",
-    "1 Timothy", "1 Tim", "1 Ti", "I Timothy", "I Tim", "I Ti",
-    "2 Timothy", "2 Tim", "2 Ti", "II Timothy", "II Tim", "II Ti",
-    "Titus", "Tit", "Ti", "Philemon", "Philem", "Phm", "Pm", "Hebrews", "Heb",
-    "James", "Jas", "Jm", "1 Peter", "1 Pet", "1 Pe", "1 Pt", "I Peter", "I Pet", "I Pe",
-    "2 Peter", "2 Pet", "2 Pe", "2 Pt", "II Peter", "II Pet", "II Pe",
-    "1 John", "1 Jn", "1 J", "I John", "I Jn", "2 John", "2 Jn", "2 J", "II John", "II Jn",
-    "3 John", "3 Jn", "3 J", "III John", "III Jn", "Jude", "Jd", "Revelation", "Rev", "Rv"
-  ];
-   
-  const sortedBooks = books.sort((a,b) => b.length - a.length).join("|");
-  // Updated Regex: Allows for an optional dot \.? after the book name before the space
-  const verseRegex = new RegExp(`(\\b(?:${sortedBooks})\\.?\\s+\\d+:\\d+(?:[-–,]\\d+)*\\b)`, 'gi');
-   
+  const books = CANONICAL_BOOKS.join("|");
+  const verseRegex = new RegExp(`(\\b(?:${books})\\.?\\s+\\d+:\\d+(?:[-–,]\\d+)*\\b)`, 'gi');
   const youtubeRegex = /\b(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:\S+)?/g;
-   
+  
   const renderNodes = (nodes) => Array.from(nodes).map((node, i) => {
-      // --- TEXT NODE PROCESSING ---
       if (node.nodeType === 3) {
         const text = node.textContent;
         if(!text.trim()) return null;
-        
-        // 1. Split by YouTube URL to find embeds
         const parts = text.split(youtubeRegex);
-        
         return (
           <React.Fragment key={i}>
             {parts.map((part, index) => {
-               // Odd index = Captured YouTube ID
-               if (index % 2 === 1 && part.length === 11) {
-                   return <YouTubeEmbed key={index} videoId={part} />;
-               }
-               
-               // Even index = Normal Text -> Process for Verses
+               if (index % 2 === 1 && part.length === 11) return <div key={index} className="my-8 w-full max-w-3xl mx-auto overflow-hidden rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 bg-black relative" style={{ paddingBottom: '56.25%', height: 0 }}><iframe src={`https://www.youtube.com/embed/${part}`} className="absolute top-0 left-0 w-full h-full" frameBorder="0" allowFullScreen /></div>;
                const verseParts = part.split(verseRegex);
                return verseParts.map((vPart, vIndex) => {
-                   if (verseRegex.test(vPart)) {
-                       return <VerseTooltip key={`${index}-${vIndex}`} reference={vPart} theme={theme} onOpenBible={onOpenBible} />;
-                   }
+                   if (verseRegex.test(vPart)) return <span key={`${index}-${vIndex}`} className={`cursor-pointer font-bold border-b border-dotted ${theme.colors.text}`} onClick={(e)=>{e.stopPropagation(); onOpenBible(vPart)}}>{vPart}</span>;
                    return <span key={`${index}-${vIndex}`}>{vPart}</span>;
                });
             })}
           </React.Fragment>
         );
       }
-      
-      // --- ELEMENT NODE PROCESSING ---
       if (node.nodeType === 1) {
         const tagName = node.tagName.toLowerCase();
         if (['script','style'].includes(tagName)) return null;
-        
-        // AUTO-CONVERT LINKS: Check if <a> tag is a YouTube Link
-        if (tagName === 'a') {
-            const href = node.getAttribute('href');
-            const ytMatch = href && href.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/);
-            if (ytMatch) {
-                return <YouTubeEmbed key={i} videoId={ytMatch[1]} />;
-            }
-        }
-
         const props = { key: i };
-        
         if (node.attributes) Array.from(node.attributes).forEach(attr => { 
-            if (attr.name === 'style') {
-                // Parse inline styles to React object
-                props.style = parseStyleString(attr.value);
-                return;
-            }
+            if (attr.name === 'style') { props.style = parseStyleString(attr.value); return; }
             if (attr.name === 'class') { props.className = attr.value; return; }
-            if(/^[a-z0-9-]+$/.test(attr.name)) props[attr.name] = attr.value; 
+            props[attr.name] = attr.value; 
         });
-
         let baseClass = props.className || '';
-        // Typography styles
         if (tagName === 'p') baseClass += ' mb-6 leading-relaxed text-gray-800 dark:text-slate-300 text-base md:text-lg';
         if (tagName === 'h1') baseClass += ' text-3xl font-extrabold mt-10 mb-6 text-gray-900 dark:text-slate-100 border-b dark:border-slate-700 pb-4';
         if (tagName === 'h2') baseClass += ' text-2xl font-bold mt-8 mb-4 text-gray-800 dark:text-slate-200 border-b pb-2 border-gray-100 dark:border-slate-700';
@@ -560,17 +258,10 @@ const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
         if (tagName === 'blockquote') baseClass += ' border-l-4 border-indigo-300 dark:border-indigo-700 pl-6 py-3 my-6 italic text-gray-700 dark:text-slate-400 bg-gray-50 dark:bg-slate-800/50 rounded-r-lg';
         if (tagName === 'b' || tagName === 'strong') baseClass += ' font-bold text-gray-900 dark:text-white';
         if (tagName === 'i' || tagName === 'em') baseClass += ' italic';
-        
         props.className = baseClass;
-        
-        // Link handling
         if (props['data-wiki-link'] && onNavigate) {
           props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); onNavigate(props['data-wiki-link']); };
           props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-bold bg-indigo-50 dark:bg-indigo-900/30 px-1 rounded`;
-        }
-        if (props['data-wiki-anchor']) {
-          props.onClick = (e) => { e.preventDefault(); e.stopPropagation(); const el = document.getElementById(props['data-wiki-anchor']); if(el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-          props.className += ` cursor-pointer ${theme.colors.text} hover:underline font-medium`;
         }
         return React.createElement(tagName, props, node.childNodes.length > 0 ? renderNodes(node.childNodes) : null);
       }
@@ -578,8 +269,6 @@ const HtmlContentRenderer = ({ html, theme, onNavigate, onOpenBible }) => {
   });
   try { return <>{renderNodes(new DOMParser().parseFromString(html || "", 'text/html').body.childNodes)}</>; } catch { return null; }
 };
-
-// ... (Rest of the file remains exactly the same, keeping existing components like VerseOfTheDayWidget, App, etc.)
 
 const VerseOfTheDayWidget = () => {
   const [verseData, setVerseData] = useState({ text: "Loading verse...", ref: "" });
@@ -846,44 +535,30 @@ const AiLibrarianWidget = ({ articles, navigateTo }) => {
 
 // --- MAIN APP COMPONENT ---
 function App() {
-  if (initError === "CONFIGURATION_NEEDED") {
-      return (
-          <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-900 p-4 font-sans">
-              <div className="max-w-md w-full bg-white dark:bg-slate-800 rounded-xl shadow-lg p-8 border border-red-100 dark:border-red-900 text-center">
-                  <div className="w-16 h-16 bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32}/></div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Configuration Needed</h1>
-                  <p className="text-gray-600 dark:text-gray-300 mb-6">Update <code>src/App.jsx</code> with your Firebase keys.</p>
-              </div>
-          </div>
-      );
-  }
-  if (initError) throw new Error("Firebase Failed: " + initError);
-
   // --- State ---
   const [user, setUser] = useState(null);
   const [view, setView] = useState('home');
-  // Removed 'previousView' as it is insufficient for deep navigation
-  const [articles, setArticles] = useState([]);
-  const [recentArticles, setRecentArticles] = useState([]); // NEW: State for lazy loaded home articles
-  const [isLibraryLoaded, setIsLibraryLoaded] = useState(false); // NEW: State to track if full library is loaded
+  // Replaced "articles" with targeted lists to avoid loading 80k items
+  const [recentArticles, setRecentArticles] = useState([]); 
+  const [searchResults, setSearchResults] = useState([]);
+  const [adminArticles, setAdminArticles] = useState([]);
+  const [adminLastDoc, setAdminLastDoc] = useState(null); // Cursor for admin pagination
+  
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState(null);
   const [selectedArticle, setSelectedArticle] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [limitCount, setLimitCount] = useState(50);
-  const [homeFilter, setHomeFilter] = useState('recent'); // 'recent', 'popular', 'random'
-   
+  const [isLoading, setIsLoading] = useState(false);
+  
   // Settings
   const [siteTitle, setSiteTitle] = useState("Theologue");
-  const [siteDescription, setSiteDescription] = useState("Welcome to the library.");
+  const [siteDescription, setSiteDescription] = useState("Welcome.");
   const [siteColor, setSiteColor] = useState("indigo");
   const [siteTextColor, setSiteTextColor] = useState("gray");
   const [siteFont, setSiteFont] = useState("sans");
   const [siteTextSize, setSiteTextSize] = useState("base");
-  const [categoryStyle, setCategoryStyle] = useState("gradient"); // 'gradient' or 'image'
+  const [categoryStyle, setCategoryStyle] = useState("gradient"); 
   const [imageSeed, setImageSeed] = useState(0);
   const [siteLogo, setSiteLogo] = useState(null);
-  // NEW: Dark Mode Logo Support
   const [siteLogoDark, setSiteLogoDark] = useState(null); 
   const [isDarkMode, setIsDarkMode] = useState(false);
    
@@ -891,35 +566,14 @@ function App() {
   const [adminTab, setAdminTab] = useState('manage');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
-  const [loginError, setLoginError] = useState("");
   const [importStatus, setImportStatus] = useState(null);
   const [importProgress, setImportProgress] = useState(0);
-  const [adminSearchQuery, setAdminSearchQuery] = useState("");
-  const [adminPage, setAdminPage] = useState(1);
-  const [adminPageSize, setAdminPageSize] = useState(10);
-  const [adminSortBy, setAdminSortBy] = useState('date'); // 'date', 'title', 'category'
-  const [adminSortDirection, setAdminSortDirection] = useState('desc'); // 'asc', 'desc'
   const [customSections, setCustomSections] = useState([]);
   const [dbCategoryCounts, setDbCategoryCounts] = useState({});
   const [bibleState, setBibleState] = useState({ book: "John", chapter: 1 });
+  const [notes, setNotes] = useState({}); 
 
-  // Updated: Session-based Notes (clears on exit, warns on close)
-  const [notes, setNotes] = useState(() => { 
-      try { 
-        if (typeof window === 'undefined') return {};
-        // Migration: If user had old persistent notes, move them to session
-        const localNotes = localStorage.getItem('theologue_notes');
-        if (localNotes) {
-            localStorage.removeItem('theologue_notes');
-            sessionStorage.setItem('theologue_notes', localNotes);
-            return JSON.parse(localNotes);
-        }
-        return JSON.parse(sessionStorage.getItem('theologue_notes')) || {}; 
-      } 
-      catch { return {}; } 
-  });
-   
-  // UI States
+  // UI
   const [showNoteWidget, setShowNoteWidget] = useState(true);
   const [isWelcomeMinimized, setIsWelcomeMinimized] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -928,9 +582,8 @@ function App() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
-  const [pendingScrollAnchor, setPendingScrollAnchor] = useState(null);
 
-  // Editor States
+  // Editor
   const [editingId, setEditingId] = useState(null);
   const [editorTitle, setEditorTitle] = useState("");
   const [editorCategory, setEditorCategory] = useState("");
@@ -939,22 +592,13 @@ function App() {
   const [sectionPersistent, setSectionPersistent] = useState(false);
   const [sectionExpiry, setSectionExpiry] = useState("");
   const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
-  const [loginStep, setLoginStep] = useState('password');
-  const [mfaInput, setMfaInput] = useState("");
-   
-  // New State for delete confirmation
-  const [deleteConfirmation, setDeleteConfirmation] = useState(null); // { type: 'section' | 'article', id: string }
 
-
-  // Import Refs
   const pagesRef = useRef(null);
   const importCursorRef = useRef(0);
   const abortImportRef = useRef(false);
-  // NEW: Add a ref to control deletion loop explicitly
   const abortDeleteRef = useRef(false);
   const [importState, setImportState] = useState('idle');
 
-  // Computed
   const currentTheme = useMemo(() => ({
     font: FONTS[siteFont] || FONTS.sans,
     textSize: TEXT_SIZES[siteTextSize] || TEXT_SIZES.base,
@@ -963,28 +607,10 @@ function App() {
   }), [siteColor, siteFont, siteTextSize, siteTextColor]);
 
   // --- Effects ---
-   
-  // Dark Mode Detection Effect
   useEffect(() => {
-    // Check initial system preference
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setIsDarkMode(true);
-      document.documentElement.classList.add('dark');
+      setIsDarkMode(true); document.documentElement.classList.add('dark');
     }
-    
-    // Listen for changes
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (e) => {
-        setIsDarkMode(e.matches);
-        if (e.matches) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    };
-    
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
   useEffect(() => {
@@ -999,352 +625,138 @@ function App() {
     return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // NEW: Fetch Recent Articles Snapshot (created by import/save logic)
+  // Fetch Settings & Initial Data (Lite Fetch)
   useEffect(() => {
     if (!user || !db) return;
-    setIsLoading(true);
     
+    // 1. Settings
     getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global')).then(snap => {
         if(snap.exists()) {
             const d = snap.data();
-            if(d.title) setSiteTitle(d.title);
-            if(d.description) setSiteDescription(d.description);
-            if(d.color) setSiteColor(d.color);
-            if(d.font) setSiteFont(d.font);
-            if(d.logo) setSiteLogo(d.logo);
-            if(d.logoDark) setSiteLogoDark(d.logoDark); // LOAD DARK LOGO
-            if(d.categoryStyle) setCategoryStyle(d.categoryStyle);
+            setSiteTitle(d.title || "Theologue");
+            setSiteDescription(d.description || "");
+            setSiteColor(d.color || "indigo");
+            setSiteFont(d.font || "sans");
+            setSiteLogo(d.logo);
+            setSiteLogoDark(d.logoDark);
+            setCategoryStyle(d.categoryStyle || "gradient");
         }
     });
 
-    // IMPORTANT: WE NO LONGER FETCH 'articles' COLLECTION HERE BY DEFAULT
-    // This prevents loading 80k docs on startup.
-
+    // 2. Sections
     const unsubSections = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sections'), 
-        (s) => setCustomSections(s.docs.map(d => ({ id: d.id, ...d.data() }))), 
-        (e) => console.warn("Sections error:", e.code));
+        (s) => setCustomSections(s.docs.map(d => ({ id: d.id, ...d.data() }))));
 
+    // 3. Stats (Category Counts)
     const unsubStats = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories'), 
-        (s) => { if(s.exists()) setDbCategoryCounts(s.data()); }, 
-        (e) => console.warn("Stats error:", e.code));
+        (s) => { if(s.exists()) setDbCategoryCounts(s.data()); });
     
-    // NEW: Fetch Recent Articles Snapshot (created by import/save logic)
+    // 4. Recent Articles (Home Page)
     const unsubRecent = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'recent'),
         (s) => {
-             if (s.exists()) {
-                 const data = s.data();
-                 if (data.items) setRecentArticles(data.items);
-             }
-             setIsLoading(false); 
-        }, 
-        (e) => { 
-            console.warn("Recent stats missing, will lazy load if needed"); 
-            setIsLoading(false);
-        }
-    );
+             if (s.exists() && s.data().items) setRecentArticles(s.data().items);
+             else fetchFallbackRecent();
+        });
 
     return () => { unsubSections(); unsubStats(); unsubRecent(); };
   }, [user]);
 
-  // LAZY LOADING FUNCTION (Called by Search, Admin, Librarian)
-  const loadFullLibrary = async () => {
-      if (isLibraryLoaded) return;
+  const fetchFallbackRecent = async () => {
+      if (!db) return;
+      const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), orderBy("createdAt", "desc"), limit(10));
+      const snap = await getDocs(q);
+      setRecentArticles(snap.docs.map(d => ({id: d.id, ...d.data()})));
+  };
+
+  // --- ACTIONS ---
+  
+  // SERVER-SIDE SEARCH
+  const performSearch = async (term, cat) => {
+      if (!db) return;
       setIsLoading(true);
-      showNotification("Loading full library index...");
+      setSearchResults([]);
+      
       try {
           const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
+          let q;
           
-          // SAFETY LIMIT: Only load 2000 to prevent crash on 80k docs
-          const q = query(articlesRef, orderBy("createdAt", "desc"), limit(2000));
+          if (cat) {
+              // Category Filter
+              q = query(articlesRef, where("category", "==", cat), limit(20));
+          } else if (term) {
+              // Prefix Search (Title)
+              // Note: Firestore is case-sensitive for string range queries. 
+              // Ideally store a lowercase 'title_lower' field for case-insensitive search.
+              // For now, this searches exact case prefix.
+              q = query(articlesRef, orderBy("title"), startAt(term), endAt(term + '\uf8ff'), limit(20));
+          } else {
+              // Default view
+              q = query(articlesRef, orderBy("createdAt", "desc"), limit(20));
+          }
           
           const snap = await getDocs(q);
-          let fetched = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          
-          setArticles(fetched);
-          setIsLibraryLoaded(true);
-          showNotification(`Loaded ${fetched.length} articles.`);
+          setSearchResults(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch (e) {
-          console.error("Failed to load library:", e);
-          showNotification("Error loading library");
+          console.error("Search failed:", e);
+          setNotification({message: "Search failed. Check console."});
       } finally {
           setIsLoading(false);
       }
   };
 
-  // Ref to hold notes for listener
-  const notesRef = useRef(notes);
-   
-  // Update ref and storage when notes change
-  useEffect(() => { 
-      notesRef.current = notes;
-      if (typeof window !== 'undefined') {
-          sessionStorage.setItem('theologue_notes', JSON.stringify(notes)); 
-      }
-  }, [notes]);
-
-  // Warning on Tab Close/Exit
-  useEffect(() => {
-      const handleBeforeUnload = (e) => {
-          if (Object.keys(notesRef.current).length > 0) {
-              const message = "You have unsaved notes! Please download them before closing, or they will be lost.";
-              e.preventDefault();
-              e.returnValue = message; // Standard for some browsers
-              return message; // For others
-          }
-      };
-      window.addEventListener('beforeunload', handleBeforeUnload);
-      return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
-
-  // --- Memos ---
-  const activeSections = useMemo(() => {
-      const now = new Date();
-      return customSections.filter(s => s.isPersistent || (s.expirationDate && new Date(s.expirationDate) > now));
-  }, [customSections]);
-
-  const categoryStats = useMemo(() => {
-      if (Object.keys(dbCategoryCounts).length > 0) return Object.entries(dbCategoryCounts).sort((a,b) => b[1]-a[1]).slice(0,12);
-      // Fallback if stats doc missing but library loaded
-      if (articles.length > 0) {
-        const c = {}; 
-        articles.forEach(a => { if(a.category) c[a.category] = (c[a.category] || 0) + 1; });
-        return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,12);
-      }
-      return [];
-  }, [articles, dbCategoryCounts]);
-
-  const categories = useMemo(() => {
-     if (Object.keys(dbCategoryCounts).length > 0) return Object.keys(dbCategoryCounts).sort();
-     return Array.from(new Set(articles.map(a => a.category))).sort();
-  }, [articles, dbCategoryCounts]);
-
-  // Filter Logic
-  const filteredArticles = useMemo(() => {
-    let result = articles;
-    if (activeCategory) {
-        result = result.filter(a => a.category === activeCategory);
-    }
-    if (searchQuery) {
-        const lower = searchQuery.toLowerCase();
-        result = result.filter(a => (a.title || "").toLowerCase().includes(lower) || (a.content || "").toLowerCase().includes(lower));
-    }
-    return result;
-  }, [articles, searchQuery, activeCategory]);
-
-  const getCategoryImage = (cat) => {
-      if(!cat) return "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)";
-      
-      // OPTION 1: Gradient Mode (Default)
-      if (categoryStyle === 'gradient') {
-          let hash = 0;
-          for (let i = 0; i < cat.length; i++) hash = cat.charCodeAt(i) + ((hash << 5) - hash);
-          const styles = [
-            "linear-gradient(135deg, #3b82f6 0%, #1e3a8a 100%)", // Blue
-            "linear-gradient(135deg, #10b981 0%, #064e3b 100%)", // Emerald
-            "linear-gradient(135deg, #f59e0b 0%, #78350f 100%)", // Amber
-            "linear-gradient(135deg, #8b5cf6 0%, #4c1d95 100%)", // Violet
-            "linear-gradient(135deg, #ec4899 0%, #831843 100%)", // Pink
-            "linear-gradient(135deg, #6366f1 0%, #312e81 100%)", // Indigo
-            "linear-gradient(to right, #243949 0%, #517fa4 100%)", // Steel
-            "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)", // Deep Purple
-          ];
-          return styles[Math.abs(hash) % styles.length];
-      }
-
-      // OPTION 2: Dynamic Image Mode
-      // Curated list of theological/library style images
-      const images = {
-          bible: "https://images.unsplash.com/photo-1491841550275-ad7854e35ca6?auto=format&fit=crop&w=800&q=80", // Open Bible
-          church: "https://images.unsplash.com/photo-1548625149-fc4a29cf7092?auto=format&fit=crop&w=800&q=80", // Church Interior
-          cross: "https://images.unsplash.com/photo-1507646870321-df8b26bc43c2?auto=format&fit=crop&w=800&q=80", // Cross
-          history: "https://images.unsplash.com/photo-1461360370896-922624d12aa1?auto=format&fit=crop&w=800&q=80", // Old Book/History
-          sky: "https://images.unsplash.com/photo-1504052434569-70ad5836ab65?auto=format&fit=crop&w=800&q=80", // Sky/Light
-          nature: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=800&q=80", // Nature
-          library: "https://images.unsplash.com/photo-1507842217121-9e691b2d0941?auto=format&fit=crop&w=800&q=80", // Library
-          scroll: "https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=800&q=80", // Scroll/Parchment
-          candles: "https://images.unsplash.com/photo-1602607303737-b1c1d9a20274?auto=format&fit=crop&w=800&q=80", // Candles
-          community: "https://images.unsplash.com/photo-1511632765486-a01980e01a18?auto=format&fit=crop&w=800&q=80", // People
-      };
-
-      const catLower = cat.toLowerCase();
-      let selectedImage = images.library; // Default
-
-      // Keywords Mapping
-      if (catLower.includes('bibl') || catLower.includes('scripture') || catLower.includes('testament')) selectedImage = images.bible;
-      else if (catLower.includes('church') || catLower.includes('cathedral') || catLower.includes('chapel')) selectedImage = images.church;
-      else if (catLower.includes('jesus') || catLower.includes('christ') || catLower.includes('cross') || catLower.includes('salvation')) selectedImage = images.cross;
-      else if (catLower.includes('history') || catLower.includes('ancient') || catLower.includes('old') || catLower.includes('archaeology')) selectedImage = images.history;
-      else if (catLower.includes('god') || catLower.includes('spirit') || catLower.includes('heaven') || catLower.includes('creation') || catLower.includes('prayer')) selectedImage = images.sky;
-      else if (catLower.includes('nature') || catLower.includes('world') || catLower.includes('earth')) selectedImage = images.nature;
-      else if (catLower.includes('scroll') || catLower.includes('manuscript') || catLower.includes('text')) selectedImage = images.scroll;
-      else if (catLower.includes('light') || catLower.includes('hope') || catLower.includes('advent')) selectedImage = images.candles;
-      else if (catLower.includes('people') || catLower.includes('women') || catLower.includes('men') || catLower.includes('community') || catLower.includes('mission')) selectedImage = images.community;
-      else {
-          // Dynamic Fallback for unknown categories: consistently map to one of the high-quality images based on name
-          const fallbackList = Object.values(images);
-          let hash = 0;
-          for (let i = 0; i < cat.length; i++) hash = cat.charCodeAt(i) + ((hash << 5) - hash);
-          selectedImage = fallbackList[Math.abs(hash) % fallbackList.length];
-      }
-
-      return `url(${selectedImage})`;
-  };
-
-  // --- NAVIGATION LOGIC (History Based) ---
-   
-  // 1. Initialize History State on Mount & Listen to PopState
-  useEffect(() => {
-      const initialState = { view: 'home', data: null };
-      window.history.replaceState(initialState, '', '#home');
-
-      const onPopState = (event) => {
-          if (event.state) {
-              const { view: nextView, data } = event.state;
-              setView(nextView);
-              
-              if (nextView === 'article') {
-                  setSelectedArticle(data);
-                  setActiveCategory(null); // Ensure category doesn't persist inappropriately
-              } else if (nextView === 'search') {
-                  // If we are popping back to a search view (e.g. Category), restore context
-                  if (data && data.category) {
-                      setActiveCategory(data.category);
-                      setSearchQuery("");
-                      loadFullLibrary(); // Trigger lazy load if searching
-                  } else {
-                      setActiveCategory(null);
-                  }
-              } else {
-                  // Home or other views
-                  setSelectedArticle(null);
-                  setActiveCategory(null);
-              }
-          } else {
-              // Fallback
-              setView('home');
-          }
-      };
-
-      window.addEventListener('popstate', onPopState);
-      return () => window.removeEventListener('popstate', onPopState);
-  }, []);
-
-  // 2. Central Navigation Function
-  const navigateTo = (targetView, data = null) => {
-      const newState = { view: targetView, data };
-      
-      // Construct logical URL hash for context
-      let hash = `#${targetView}`;
-      if (targetView === 'article' && data?.id) hash = `#article/${data.id}`;
-      else if (targetView === 'search' && data?.category) hash = `#category/${data.category}`;
-      
-      window.history.pushState(newState, '', hash);
-      
-      // Update State immediately
-      setView(targetView);
-      
-      if (targetView === 'article') {
-          setSelectedArticle(data);
-          // Increment View Count
-          if (db && data.id) {
-             try {
-                 const ref = doc(db, 'artifacts', appId, 'public', 'data', 'articles', data.id);
-                 updateDoc(ref, { views: (data.views || 0) + 1 });
-             } catch(e) { console.error("View increment error:", e); }
-          }
-      } else if (targetView === 'search') {
-          loadFullLibrary(); // Lazy load trigger for search
-          if (data && data.category) {
-              setActiveCategory(data.category);
-              setSearchQuery("");
-          } else {
-              setActiveCategory(null);
-          }
-      } else if (targetView === 'home') {
-          setActiveCategory(null);
-          setSelectedArticle(null);
-      }
-  };
-
-  // 3. Back Handler (Uses Browser History)
-  const handleInternalBack = () => {
-      window.history.back();
-  };
-
-  // --- Helpers ---
-  // Updated: Use navigateTo for article clicks to create history entries
-  const handleArticleClick = (a) => { 
-      navigateTo('article', a);
-  };
-
-  // Updated: Use navigateTo for nav items
-  const handleNavClick = (viewName) => {
-      navigateTo(viewName);
-  };
-   
-  const handleOpenBible = (ref) => {
-    const match = ref.trim().match(/^(.+?)\.?\s+(\d+):/);
-    if (match) {
-        let b = match[1].trim();
-        let c = parseInt(match[2]);
-        
-        const commonMap = {
-            "Mt": "Matthew", "Matt": "Matthew",
-            "Mk": "Mark",
-            "Lk": "Luke", 
-            "Jn": "John",
-            "Gen": "Genesis", "Ex": "Exodus", "Lev": "Leviticus", "Num": "Numbers", "Deut": "Deuteronomy",
-            "1 Sam": "1 Samuel", "2 Sam": "2 Samuel",
-            "1 Kgs": "1 Kings", "2 Kgs": "2 Kings",
-            "1 Cor": "1 Corinthians", "2 Cor": "2 Corinthians",
-            "Rev": "Revelation"
-        };
-        
-        if (commonMap[b]) b = commonMap[b];
-        
-        setBibleState({ book: b, chapter: c });
-        setSidebarTab('bible');
-        
-        // Scroll sidebar into view on mobile
-        const sidebar = document.getElementById('sidebar-container');
-        if (sidebar) sidebar.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-
-  const handleLogout = () => { setIsAuthenticated(false); navigateTo('home'); };
-  const showNotification = (msg) => { setNotification({message: msg}); setTimeout(()=>setNotification(null), 3000); };
-   
-  const handleNavigateByTitle = async (target) => {
-      const title = target.split('#')[0];
-      const local = articles.find(a => a.title.toLowerCase() === title.toLowerCase());
-      if (local) { 
-          navigateTo('article', local); 
-          return; 
-      }
-      
+  // ADMIN PAGINATION FETCH
+  const fetchAdminArticles = async (reset = false) => {
       if (!db) return;
+      setIsLoading(true);
       try {
           const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
-          const snap = await getDocs(articlesRef);
-          const found = snap.docs.find(d => d.data().title === title);
-          if(found) {
-              const articleData = { id: found.id, ...found.data() };
-              navigateTo('article', articleData);
+          let q = query(articlesRef, orderBy("createdAt", "desc"), limit(20));
+          
+          if (!reset && adminLastDoc) {
+              q = query(articlesRef, orderBy("createdAt", "desc"), startAfter(adminLastDoc), limit(20));
           }
-          else showNotification("Article not found: " + title);
-      } catch(e) { console.error(e); }
+          
+          const snap = await getDocs(q);
+          const newItems = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          
+          if (reset) {
+              setAdminArticles(newItems);
+          } else {
+              setAdminArticles(prev => [...prev, ...newItems]);
+          }
+          setAdminLastDoc(snap.docs[snap.docs.length - 1]);
+      } catch (e) {
+          console.error(e);
+      } finally {
+          setIsLoading(false);
+      }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setView('home');
+  };
+
+  const handleNavigateByTitle = async (title) => {
+    if(!db) return;
+    try {
+        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), where('title', '==', title), limit(1));
+        const snap = await getDocs(q);
+        if(!snap.empty) {
+            const doc = snap.docs[0];
+            setSelectedArticle({id: doc.id, ...doc.data()});
+            setView('article');
+        } else {
+            setNotification({message: "Article not found"});
+        }
+    } catch(e) { console.error(e); }
   };
 
   const handleLogin = (e) => {
       e.preventDefault();
-      setLoginError("");
-      if(loginStep === "password") {
-          if(passwordInput === "admin123") { setLoginStep('mfa'); showNotification("Code: Accepted"); }
-          else setLoginError("Incorrect password");
-      } else {
-          if(mfaInput === "123456") { setIsAuthenticated(true); setPasswordInput(""); setMfaInput(""); setLoginStep('password'); }
-          else setLoginError("Invalid Verification Code");
+      if(passwordInput === "admin123") { 
+          setIsAuthenticated(true); 
+          fetchAdminArticles(true); // Load initial data on login
       }
   };
 
@@ -1357,21 +769,19 @@ function App() {
     };
     try {
       if (editingId) { 
-          // Update Logic
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'articles', editingId), articleData); 
-          // Update Local State
-          setArticles(prev => prev.map(a => a.id === editingId ? { ...a, ...articleData } : a));
-          showNotification("Updated!"); 
+          // Update local list instantly
+          setAdminArticles(prev => prev.map(a => a.id === editingId ? { ...a, ...articleData } : a));
+          setNotification({message: "Updated!"});
       } 
       else { 
-          // Create Logic
           const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), { ...articleData, createdAt: serverTimestamp() }); 
-          // Update Local State (Mocking timestamp to avoid list crash)
-          setArticles(prev => [{ id: docRef.id, ...articleData, createdAt: { seconds: Date.now()/1000 } }, ...prev]);
-          showNotification("Published!"); 
+          // Prepend to local list
+          setAdminArticles(prev => [{ id: docRef.id, ...articleData }, ...prev]);
+          setNotification({message: "Published!"});
       }
       setEditingId(null); setEditorTitle(""); setEditorContent(""); setAdminTab('manage');
-    } catch (e) { console.error(e); showNotification("Save failed"); }
+    } catch (e) { console.error(e); setNotification({message: "Save failed"}); }
   };
 
   const handleSaveSettings = async () => {
@@ -1385,27 +795,19 @@ function App() {
               logoDark: siteLogoDark, // SAVE DARK LOGO
               categoryStyle: categoryStyle
           });
-          showNotification("Settings Saved!");
-      } catch(e) { console.error(e); showNotification("Failed to save settings"); }
+          setNotification({message: "Settings Saved!"});
+      } catch(e) { console.error(e); setNotification({message: "Failed to save settings"}); }
   };
-   
+
   const handleLogoUpload = async (event, type = 'light') => { 
     const file = event.target.files[0]; 
     if (file) { 
-        // Use compression
         try {
             const compressedBase64 = await compressImage(file);
             if (type === 'light') setSiteLogo(compressedBase64);
             else setSiteLogoDark(compressedBase64);
         } catch (e) {
             console.error("Compression failed", e);
-            // Fallback to original read if compression fails
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                if (type === 'light') setSiteLogo(e.target.result);
-                else setSiteLogoDark(e.target.result);
-            };
-            reader.readAsDataURL(file);
         }
     } 
   };
@@ -1413,329 +815,90 @@ function App() {
   const handleDelete = async (id) => {
     if(confirm("Delete this article?")) {
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'articles', id));
-        // Remove from local state immediately
-        setArticles(prev => prev.filter(a => a.id !== id));
-        showNotification("Deleted");
+        setAdminArticles(prev => prev.filter(a => a.id !== id)); // Instant UI update
+        setNotification({message: "Deleted"});
     }
   };
 
-  const handleAddSection = async () => {
-      if(!sectionContent) return;
-      if (!sectionPersistent && !sectionExpiry) {
-        showNotification("Please select an expiry date or make it persistent.");
-        return;
-      }
-      try {
-          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sections'), {
-              content: sectionContent,
-              isPersistent: sectionPersistent,
-              expirationDate: sectionPersistent ? null : sectionExpiry,
-              createdAt: serverTimestamp()
-          });
-          setSectionContent("");
-          setSectionPersistent(false);
-          setSectionExpiry("");
-          showNotification("Section added!");
-      } catch(e) {
-          console.error(e);
-          showNotification("Failed to add section");
-      }
-  };
-
-  const handleDeleteSection = async (id) => {
-      // Direct delete for now to ensure it works, or simple UI toggle
-      try {
-          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sections', id));
-          showNotification("Section deleted");
-      } catch(e) {
-          showNotification("Failed to delete");
-      }
-  };
-
-  const handleNoteChange = (id, text) => {
-      setNotes(prev => ({ ...prev, [id]: text }));
-  };
-
-  const handleShareNote = (id) => {
-      if(notes[id]) {
-          navigator.clipboard.writeText(notes[id]);
-          showNotification("Note copied to clipboard!");
-      } else {
-          showNotification("No note to share.");
-      }
-  };
-
-  const exportNotes = (all = false, id = null) => {
-      const content = all 
-        ? Object.entries(notes).map(([k,v]) => {
-            const article = articles.find(a => a.id === k);
-            const title = article ? article.title : `Unknown Article (ID: ${k})`;
-            return `Article: ${title}\n${v}\n-------------------`;
-        }).join('\n\n')
-        : (notes[id] || "");
-      
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = all ? 'all_notes.txt' : `note_${id}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
-  };
-
-  // --- FIXED: Delete All (Recursive Batching) ---
-  // This now deletes in chunks of 200 instead of loading everything at once
+  // --- BULK OPERATIONS ---
   const handleDeleteAll = async () => {
-    if(!confirm("DANGER: This will delete ALL articles. This cannot be undone. Are you sure?")) return;
-    if(!confirm("Are you REALLY sure?")) return;
+    if(!confirm("DANGER: This deletes EVERYTHING. Are you sure?")) return;
+    if(!confirm("REALLY?")) return;
     
-    // Stop any running imports to prevent conflict
-    abortImportRef.current = true;
+    abortImportRef.current = true; // Stop any import
     abortDeleteRef.current = false;
+    setImportStatus("Starting Deletion...");
     
-    setImportStatus("Deleting all articles...");
-    try {
-        const deleteBatch = async () => {
-            // Check for manual stop
-            if (abortDeleteRef.current) {
-                setImportStatus("Deletion Stopped.");
-                return;
-            }
-
-            const articlesRef = collection(db, 'artifacts', appId, 'public', 'data', 'articles');
-            // FIX: Only fetch 200 at a time to prevent crash
-            const q = query(articlesRef, limit(200));
-            const snapshot = await getDocs(q); 
-            
-            if (snapshot.empty) {
-                setImportStatus(null);
-                showNotification("All articles deleted.");
-                return;
-            }
-            
-            const batch = writeBatch(db);
-            snapshot.docs.forEach((doc) => {
-                batch.delete(doc.ref);
-            });
-            await batch.commit();
-            
-            setImportStatus(`Deleting... ${snapshot.size} removed.`);
-            // Recursive call with small delay to let UI breathe
-            setTimeout(deleteBatch, 50); 
-        };
-        await deleteBatch();
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories'), {});
-        setDbCategoryCounts({});
-        setArticles([]); // Clear local view
-    } catch(e) {
-        console.error(e);
-        showNotification("Deletion failed.");
-        setImportStatus(null);
-    }
+    const deleteBatch = async () => {
+        if (abortDeleteRef.current) return;
+        
+        // Fetch small batch
+        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), limit(200));
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+            setImportStatus(null);
+            setNotification({message: "All Deleted."});
+            setAdminArticles([]); 
+            return;
+        }
+        
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        
+        setImportStatus(`Deleting... ${snap.size} removed.`);
+        setTimeout(deleteBatch, 50); // Recursive
+    };
+    deleteBatch();
   };
 
-  // --- NEW: Generate Recent Stats Manually ---
-  // Run this from Admin panel once to hydrate the cache
-  const generateRecentStats = async () => {
-      if(!db) return;
-      showNotification("Generating recent stats...");
-      try {
-          const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), orderBy("createdAt", "desc"), limit(20));
-          const snapshot = await getDocs(q);
-          const items = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
-          
-          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'recent'), { items });
-          showNotification("Recent stats generated!");
-          setRecentArticles(items); // Update local state immediately
-      } catch(e) {
-          console.error(e);
-          showNotification("Failed to generate stats.");
-      }
-  };
-
-  const callGemini = async (promptType, customPrompt = "") => {
-    if (!selectedArticle) return;
-    setIsAiLoading(true); setAiResponse(""); setAiPanelOpen(true);
-    const apiKey = GEMINI_API_KEY; 
-    if (apiKey === "PASTE_YOUR_GEMINI_API_KEY_HERE" || !apiKey) {
-      setAiResponse("Please set your Gemini API Key in the src/App.jsx configuration section.");
-      setIsAiLoading(false);
-      return;
-    }
-
-    // Limit content to ~30k chars to avoid token limits while keeping enough context
-    const cleanContent = selectedArticle.content.replace(/<[^>]+>/g, '').substring(0, 30000); 
-    
-    let userQuery = ""; 
-    switch (promptType) { 
-        case 'summary': userQuery = `Summarize this theological article in 3-5 concise bullet points. The article is titled "${selectedArticle.title}":\n\n${cleanContent}`; break; 
-        case 'devotional': userQuery = `Write a short, encouraging daily devotional and prayer based on the themes found in this article titled "${selectedArticle.title}". Content:\n\n${cleanContent}`; break; 
-        case 'chat': userQuery = `Context: You are a helpful theological assistant answering questions about the article "${selectedArticle.title}". Article Content: ${cleanContent}\n\nUser Question: ${customPrompt}`; break; 
-        default: userQuery = customPrompt; 
-    } 
-    
-    const payload = { 
-        contents: [{ parts: [{ text: userQuery }] }],
-        safetySettings: [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-        ]
-    }; 
-
-    let attempt = 0; 
-    const fetchWithRetry = async () => { 
-        try { 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); 
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error?.message || response.statusText); 
-            }
-            const data = await response.json(); 
-            if (!data.candidates || !data.candidates[0].content) throw new Error("No content generated");
-            setAiResponse(data.candidates?.[0]?.content?.parts?.[0]?.text); 
-        } catch (error) { 
-            console.error("Gemini Error:", error);
-            if (attempt < 2) { 
-                await new Promise(r => setTimeout(r, 1000)); 
-                attempt++;
-                await fetchWithRetry(); 
-            } else { 
-                setAiResponse(`Error: ${error.message}. Please try again later.`); 
-            } 
-        } 
-    }; 
-    await fetchWithRetry(); 
-    setIsAiLoading(false); 
-  };
-
-  // --- Import Logic ---
-  const handleFileUpload = (e) => {
-      const file = e.target.files[0];
-      if(!file) return;
-      const r = new FileReader();
-      r.onload = (ev) => {
-          try {
-              const xml = new DOMParser().parseFromString(ev.target.result, "text/xml");
-              const pages = xml.getElementsByTagName("page");
-              pagesRef.current = pages;
-              importCursorRef.current = 0;
-              abortImportRef.current = false;
-              setImportState('active');
-              runImport(pages);
-          } catch(err) { setImportStatus("Invalid XML"); }
-      };
-      r.readAsText(file);
-  };
-
-  // --- FIXED: Import Logic (Batch Size + Pause/Resume) ---
   const runImport = async (pages) => {
       if(!db) return;
-      
-      // Stop any running deletions to avoid conflict
       abortDeleteRef.current = true;
       abortImportRef.current = false;
 
       let i = importCursorRef.current;
       const total = pages.length;
       const limit = 100000;
-      let batchCounts = {};
+      const BATCH_SIZE = 50; 
       
-      // OPTIMIZATION: Decreased batch size to 20 to prevent UI lag on large files
-      const BATCH_SIZE = 20; 
-      
-      setImportStatus(`Importing ${i} / ${total}`);
-      setImportProgress(0); 
-      
-      // Recursive function to process batches without blocking UI
       const processBatch = async () => {
-          // 1. Check Abort/Pause state immediately
           if (abortImportRef.current) { 
-              setImportState('paused'); 
-              importCursorRef.current = i; 
-              setImportStatus(`Paused at ${i} / ${total}`);
-              return; 
+              setImportState('paused'); importCursorRef.current = i; setImportStatus(`Paused at ${i}`); return; 
           }
-
           if (i >= Math.min(total, limit)) {
-              setImportState('completed');
-              setImportStatus("Import Complete!");
-              setImportProgress(100);
-              rebuildStats();
-              return;
+              setImportState('completed'); setImportStatus("Complete!"); setImportProgress(100); return;
           }
           
           setImportStatus(`Importing ${i} / ${total}`);
           setImportProgress(Math.min(100, Math.round((i / total) * 100)));
 
-          // 2. Prepare Batch
           const batch = writeBatch(db);
           let ops = 0;
           const chunk = Array.from(pages).slice(i, i + BATCH_SIZE); 
           
           chunk.forEach(p => {
               const title = p.getElementsByTagName("title")[0]?.textContent;
-              const rev = p.getElementsByTagName("revision")[0];
-              const text = rev ? rev.getElementsByTagName("text")[0]?.textContent : "";
+              const text = p.getElementsByTagName("text")[0]?.textContent || "";
               if(title && text) {
-                  let clean = text.replace(/<!--[\s\S]*?-->/g, ""); 
-                  clean = clean.replace(/\{\|[\s\S]*?\|\}/g, ""); 
-                  clean = clean.replace(/\[\[(File|Image):[^\]]*\]\]/gi, ""); 
-                  clean = clean.replace(/\[\[Category:[^\]]+\]\]/gi, "");
-                  clean = clean.replace(/'''(.+?)'''/g, "<b>$1</b>");
-                  clean = clean.replace(/''(.+?)''/g, "<i>$1</i>");
-                  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                  const titleRegex = new RegExp(`^\\s*={2,}\\s*${escapedTitle}\\s*={2,}\\s*`, 'im');
-                  clean = clean.replace(titleRegex, "");
-                  clean = clean.replace(/={2,}\s*(.*?)\s*={2,}/g, (m,t) => `<h2 class="text-xl font-bold mt-4">${t}</h2>`);
-                  clean = clean.replace(/\[\[#([^|\]]+)(?:\|([^\]]+))?\]\]/g, (m,a,l) => `<span data-wiki-anchor="${a.trim()}" class="text-indigo-600 font-medium hover:underline cursor-pointer">${l||a}</span>`);
-                  clean = clean.replace(/\[\[([^|\]]+)(?:\|([^\]]+))?\]\]/g, (m,t,l) => {
-                      const target = t.trim().replace(/_/g, ' '); 
-                      const label = l || target; 
-                      return `<span data-wiki-link="${target}" class="text-indigo-600 font-medium hover:underline cursor-pointer">${label}</span>`;
-                  });
-                  clean = clean.replace(/\n/g, "<br/>");
-                  
-                  const catMatch = text.match(/\[\[Category:([^\]|]+)/i);
-                  const cat = catMatch ? catMatch[1].trim() : ""; 
-                  if (cat) batchCounts[cat] = (batchCounts[cat] || 0) + 1; 
-                  
+                  let clean = text.replace(/<!--[\s\S]*?-->/g, "").replace(/\[\[Category:[^\]]+\]\]/gi, "");
                   const ref = doc(collection(db, 'artifacts', appId, 'public', 'data', 'articles'));
-                  batch.set(ref, { title, category: cat, content: clean, lastUpdated: new Date().toISOString().split('T')[0], createdAt: serverTimestamp() });
+                  batch.set(ref, { title, category: "Imported", content: clean.slice(0, 5000), createdAt: serverTimestamp() });
                   ops++;
               }
           });
           
-          // 3. Commit & Schedule Next
           if(ops > 0) {
-              try { 
-                  await batch.commit(); 
-                  i += BATCH_SIZE; 
-                  importCursorRef.current = i; 
-                  // Critical: Yield to main thread to allow UI updates/clicks
-                  setTimeout(processBatch, 100); 
-              } catch(e) { 
-                  console.error("Import Batch Error:", e);
-                  if(e.code === 'resource-exhausted') {
-                      setImportStatus("Quota limit hit. Waiting 10s...");
-                      setTimeout(processBatch, 10000); // Longer wait if quota issues
-                  } else {
-                      i += BATCH_SIZE; // Skip bad batch if other error
-                      setTimeout(processBatch, 100);
-                  }
-              }
-          } else { 
+              await batch.commit(); 
               i += BATCH_SIZE; 
-              importCursorRef.current = i;
-              setTimeout(processBatch, 50);
-          }
+              importCursorRef.current = i; 
+              setTimeout(processBatch, 100); 
+          } else { i += BATCH_SIZE; setTimeout(processBatch, 50); }
       };
-
-      // Start Process
       processBatch();
   };
-   
+
   const rebuildStats = async () => {
      if(!db) return;
      setImportStatus("Rebuilding stats...");
@@ -1745,263 +908,90 @@ function App() {
          const counts = {};
          snap.forEach(d => { 
              const c = d.data().category; 
-             if (c) counts[c] = (counts[c]||0)+1; // CHANGED: Only count if category exists (truthy)
+             if (c) counts[c] = (counts[c]||0)+1; 
          });
          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'categories'), counts);
          setImportStatus("Stats Rebuilt");
      } catch(e) { setImportStatus("Rebuild failed"); }
   };
-
-  // --- Render Sections ---
-  const renderHome = () => {
-      // Logic for filtering home articles
-      const getHomeArticles = () => {
-          let sorted = [...(isLibraryLoaded ? articles : recentArticles)]; // Use recentArticles if library not loaded
-          
-          if (homeFilter === 'recent') {
-             // If we only have recentArticles, they are likely already sorted by date from import
-             return sorted.slice(0, 5);
-          }
-          if (homeFilter === 'popular') {
-              return sorted.sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 5);
-          }
-          if (homeFilter === 'random') {
-              return sorted.sort(() => 0.5 - Math.random()).slice(0, 5);
-          }
-          return sorted.slice(0, 5);
-      };
-
-      const displayArticles = getHomeArticles();
-
-      // Placeholder Replacement Logic for Description
-      const descriptionText = typeof siteDescription === 'string' ? siteDescription : "";
-      // If we don't have full library, just show 5000+ or 'Many' to avoid confusing count
-      const countDisplay = isLibraryLoaded ? articles.length : (Object.keys(dbCategoryCounts).reduce((acc,k) => acc + dbCategoryCounts[k], 0) || "thousands of");
-      const processedDescription = descriptionText.replace('{{count}}', countDisplay);
-
-      return (
-      <div className={`max-w-4xl mx-auto space-y-12 animate-fadeIn ${currentTheme.font} ${currentTheme.textSize} dark:text-gray-200`}>
-        {/* IMPROVED NOTIFICATION TICKER */}
-        {notification && (
-            <div className="fixed top-6 right-6 z-[100] animate-fadeIn">
-                <div className="bg-slate-900 dark:bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700/50 backdrop-blur-sm">
-                <CheckCircle className="text-emerald-400" size={20} />
-                <span className="font-medium">{notification.message}</span>
-                </div>
-            </div>
-        )}
-
-        {/* REDUCED GAP: Changed py-12 to py-6 */}
-        <div className="text-center py-6">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-6 flex items-center justify-center gap-4">
-               {/* MODIFIED: Show text title here instead of logo, even if logo is set */}
-               {siteTitle}
-            </h1>
-            <div className="w-full mb-8 px-4">
-              <div className={`relative rounded-2xl ${currentTheme.colors.bgSoft} border ${currentTheme.colors.border} shadow-sm text-center transition-all duration-300 ${isWelcomeMinimized ? 'p-4' : 'p-6'}`}>
-                <button 
-                  onClick={() => setIsWelcomeMinimized(!isWelcomeMinimized)}
-                  className={`absolute top-2 right-2 p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 ${currentTheme.colors.text} opacity-50 hover:opacity-100 transition-opacity`}
-                  title={isWelcomeMinimized ? "Expand" : "Minimize"}
-                >
-                  {isWelcomeMinimized ? <Maximize2 size={16}/> : <Minimize2 size={16}/>}
-                </button>
-
-                <div className={`${currentTheme.textColor} ${isWelcomeMinimized ? 'text-sm' : 'text-lg'} leading-relaxed font-medium`}>
-                  {isWelcomeMinimized ? (
-                    <div className="flex items-center justify-center gap-2">
-                      {/* USE PROCESSED DESCRIPTION HERE */}
-                      <span className="truncate max-w-md">{processedDescription}</span>
-                      <button onClick={() => setIsWelcomeMinimized(false)} className={`text-xs font-bold underline ${currentTheme.colors.text} whitespace-nowrap`}>Read More</button>
-                    </div>
-                  ) : (
-                    /* USE PROCESSED DESCRIPTION HERE TOO */
-                    processedDescription
-                  )}
-                </div>
-                {!isWelcomeMinimized && (
-                  <div className={`absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 ${currentTheme.colors.bgSoft} border-b border-r ${currentTheme.colors.border} transform rotate-45`}></div>
-                )}
-              </div>
-            </div>
-        </div>
-        <VerseOfTheDayWidget />
-        <form onSubmit={e => {e.preventDefault(); if(!isLibraryLoaded) loadFullLibrary(); setView('search');}} className="relative max-w-lg mx-auto mb-8">
-            <input className="w-full pl-12 pr-4 py-4 rounded-xl border shadow-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white" placeholder="Search library..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onFocus={() => { if(!isLibraryLoaded) loadFullLibrary(); }} />
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500"/>
-        </form>
-
-        {activeSections.length > 0 && <div className="space-y-8">{activeSections.map(s => <div key={s.id} className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700"><HtmlContentRenderer html={s.content} theme={currentTheme} onNavigate={()=>{}}/></div>)}</div>}
-        <div>
-            <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold flex items-center gap-2 text-gray-900 dark:text-white"><BarChart size={18}/> Popular Categories</h2>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {/* FIX: Map directly over the array, do NOT use Object.entries on an array */}
-                {categoryStats.map(([cat, n]) => (
-                    // NAVIGATION UPDATE: Use navigateTo for category clicks
-                    <div key={cat} onClick={() => { if(!isLibraryLoaded) loadFullLibrary(); navigateTo('search', { category: cat }); }} className="relative p-4 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 cursor-pointer hover:shadow-md overflow-hidden group h-32 flex flex-col justify-between" style={{ background: getCategoryImage(cat), backgroundSize: 'cover', backgroundPosition: 'center' }}>
-                        <div className={`absolute inset-0 transition-colors ${categoryStyle === 'image' ? 'bg-black/40 hover:bg-black/30' : 'bg-black/10 hover:bg-black/0'}`}></div>
-                        <div className="relative z-10 text-white font-bold text-lg leading-tight p-2 drop-shadow-md break-words">{cat}</div>
-                        <div className="relative z-10 self-end p-2">
-                            <span className="text-xs font-medium text-white bg-black/40 px-2 py-1 rounded-full backdrop-blur-md border border-white/20 shadow-sm">{n} Articles</span>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-        
-        {/* RECENT ARTICLES SECTION with FILTER */}
-        <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
-                <h2 className="text-lg font-bold flex items-center gap-2 text-gray-900 dark:text-white"><Tag size={18}/> Articles</h2>
-                
-                {/* Filter Controls */}
-                <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 shadow-sm border border-gray-200 dark:border-slate-700">
-                    <button 
-                        onClick={() => setHomeFilter('recent')}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-1 transition-all ${homeFilter === 'recent' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
-                    >
-                        <Clock size={14}/> Recent
-                    </button>
-                    <button 
-                        onClick={() => setHomeFilter('popular')}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-1 transition-all ${homeFilter === 'popular' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
-                    >
-                        <TrendingUp size={14}/> Popular
-                    </button>
-                    <button 
-                        onClick={() => setHomeFilter('random')}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-1 transition-all ${homeFilter === 'random' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
-                    >
-                        <Shuffle size={14}/> Random
-                    </button>
-                </div>
-            </div>
-
-            <div className="space-y-4">
-                {displayArticles.map(a => (
-                    <div key={a.id} onClick={()=>handleArticleClick(a)} className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer flex justify-between items-center group transition-colors">
-                        <div>
-                            <h4 className="font-medium text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{a.title}</h4>
-                            <div className="flex items-center gap-3 mt-1">
-                                <span className="text-xs text-gray-500 dark:text-slate-400">{a.category}</span>
-                                {a.views > 0 && <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1"><TrendingUp size={10}/> {a.views} views</span>}
-                            </div>
-                        </div>
-                        <ChevronRight size={16} className="text-gray-400 dark:text-slate-500 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors"/>
-                    </div>
-                ))}
-                {displayArticles.length === 0 && (
-                    <div className="text-center py-8 text-gray-400 dark:text-slate-500 text-sm">No articles available. {isLibraryLoaded ? "" : "Full library not loaded yet."}</div>
-                )}
-            </div>
-        </div>
-      </div>
-  );
+  
+  const generateRecentStats = async () => {
+      if(!db) return;
+      setNotification({message: "Generating cache..."});
+      try {
+          const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'articles'), orderBy("createdAt", "desc"), limit(20));
+          const snapshot = await getDocs(q);
+          const items = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'recent'), { items });
+          setNotification({message: "Cache generated!"});
+          setRecentArticles(items); 
+      } catch(e) { setNotification({message: "Failed to generate cache."}); }
+  };
+  
+  // -- Notes --
+  const handleNoteChange = (id, text) => setNotes(prev => ({ ...prev, [id]: text }));
+  const handleShareNote = (id) => { if(notes[id]) { navigator.clipboard.writeText(notes[id]); setNotification({message: "Copied!"}); }};
+  const exportNotes = (all = false, id = null) => {
+      const content = all ? Object.entries(notes).map(([k,v]) => `ID: ${k}\n${v}`).join('\n\n') : (notes[id] || "");
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'notes.txt';
+      a.click();
   };
 
-  const renderSearch = () => (
-    <div className={`max-w-5xl mx-auto ${currentTheme.font}`}>
-        <div className="mb-6 flex items-center gap-4">
-            <input className="flex-1 p-3 border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-white" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Filter results..." />
-            {activeCategory && <button onClick={() => {setActiveCategory(null); setLimitCount(50);}} className="px-3 py-1 bg-gray-100 dark:bg-slate-700 rounded-lg text-sm flex items-center gap-1 dark:text-gray-200">Category: {activeCategory} <X size={14}/></button>}
-        </div>
-        
-        {/* LAZY LOAD PROMPT */}
-        {!isLibraryLoaded && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl text-center mb-6">
-                <p className="text-blue-800 dark:text-blue-200 mb-4">The full library index is not loaded to save data. Load it now to search all 80,000+ articles.</p>
-                <button onClick={loadFullLibrary} disabled={isLoading} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700">
-                    {isLoading ? "Loading..." : "Load Full Library"}
-                </button>
-            </div>
-        )}
-
-        <div className="grid gap-4">
-            {filteredArticles.slice(0, limitCount).map(a => (
-                <div key={a.id} onClick={() => handleArticleClick(a)} className="p-6 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 hover:shadow-md cursor-pointer">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{a.title}</h3>
-                    <Badge theme={currentTheme}>{a.category}</Badge>
-                </div>
-            ))}
-            {filteredArticles.length === 0 && <div className="text-center py-10 text-gray-400 dark:text-slate-500">No articles found matching your criteria.</div>}
-        </div>
-        {filteredArticles.length >= limitCount && <button onClick={() => setLimitCount(l => l + 50)} className="w-full mt-8 py-3 bg-gray-100 dark:bg-slate-800 rounded-xl font-bold text-gray-600 dark:text-slate-300">Load More</button>}
-    </div>
-  );
-
-  // --- Article Render (Restored Layout) ---
-  const renderArticle = () => {
-      if(!selectedArticle) return null;
-      return (
-          <div className={`max-w-6xl mx-auto flex flex-col lg:flex-row gap-8 animate-fadeIn relative ${currentTheme.font} ${currentTheme.textSize}`}>
-              <div className="flex-1 bg-white dark:bg-slate-800 min-h-[80vh] p-8 md:p-12 shadow-sm rounded-xl border border-gray-100 dark:border-slate-700">
-                <button onClick={handleInternalBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 dark:text-slate-400 dark:hover:text-white mb-6 font-medium bg-gray-100 dark:bg-slate-700 px-4 py-2 rounded-lg transition-colors hover:bg-gray-200 dark:hover:bg-slate-600 w-fit"><ArrowLeft size={16}/> Back</button>
-                  <div className="mb-8 border-b border-gray-100 dark:border-slate-700 pb-6">
-                      <div className="flex justify-between items-start">
-                         <h1 className="text-4xl font-bold mt-4 mb-2 text-gray-900 dark:text-white">{selectedArticle.title}</h1>
-                         {/* NAVIGATION UPDATE: Use navigateTo for category badge clicks */}
-                         <Badge theme={currentTheme} onClick={() => navigateTo('search', { category: selectedArticle.category })}>{selectedArticle.category}</Badge>
-                      </div>
-                  </div>
-                  <div className="prose max-w-none dark:text-slate-200">
-                      <HtmlContentRenderer html={selectedArticle.content} theme={currentTheme} onNavigate={handleNavigateByTitle} onOpenBible={handleOpenBible} />
-                  </div>
-              </div>
-              
-              {/* Restored Sidebar */}
-              <div className="w-full lg:w-80 flex-shrink-0" id="sidebar-container">
-                <div className="sticky top-20 flex flex-col gap-4">
-                  <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 shadow-sm border border-gray-200 dark:border-slate-700">
-                    <button onClick={() => setSidebarTab('ai')} className={`flex-1 py-2 text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-colors ${sidebarTab === 'ai' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}><Sparkles size={16} /> AI Assistant</button>
-                    <button onClick={() => setSidebarTab('bible')} className={`flex-1 py-2 text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-colors ${sidebarTab === 'bible' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}><BookOpen size={16} /> Bible</button>
-                    <button onClick={() => setSidebarTab('notes')} className={`flex-1 py-2 text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-colors ${sidebarTab === 'notes' ? `${currentTheme.colors.bgSoft} ${currentTheme.colors.text}` : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}><PenLine size={16} /> Notes</button>
-                  </div>
-                  
-                  {sidebarTab === 'ai' && (
-                    <div className={`bg-gradient-to-br from-gray-50 to-white dark:from-slate-800 dark:to-slate-900 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm`}>
-                      <div className="space-y-3 mb-6">
-                        <button onClick={() => callGemini('summary')} className={`w-full text-left px-4 py-3 bg-white dark:bg-slate-800 hover:${currentTheme.colors.bgSoft} border border-gray-200 dark:border-slate-700 rounded-lg text-sm font-medium ${currentTheme.textColor} transition-colors flex items-center gap-2`}><FileText size={16} className="text-blue-500" /> Summarize Article</button>
-                        <button onClick={() => callGemini('devotional')} className={`w-full text-left px-4 py-3 bg-white dark:bg-slate-800 hover:${currentTheme.colors.bgSoft} border border-gray-200 dark:border-slate-700 rounded-lg text-sm font-medium ${currentTheme.textColor} transition-colors flex items-center gap-2`}><Book size={16} className="text-emerald-500" /> Generate Devotional</button>
-                      </div>
-                      <div className="border-t border-gray-200 dark:border-slate-700 pt-4">
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Ask a Question</label>
-                        <div className="relative"><input type="text" value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && callGemini('chat', aiPrompt)} placeholder="Ask about this topic..." className={`w-full pl-3 pr-10 py-2 text-sm border border-gray-200 dark:border-slate-600 dark:bg-slate-700 dark:text-white rounded-lg focus:outline-none ${currentTheme.colors.ring}`} /><button onClick={() => callGemini('chat', aiPrompt)} className={`absolute right-2 top-1/2 -translate-y-1/2 ${currentTheme.colors.text} hover:opacity-80`}><Send size={16} /></button></div>
-                      </div>
-                      {aiPanelOpen && <div className="mt-6 pt-6 border-t border-gray-200 dark:border-slate-700 animate-fadeIn">{isAiLoading ? (<div className="flex items-center gap-2 text-sm text-gray-500 justify-center py-4"><Loader size={16} className="animate-spin" /> Thinking...</div>) : (<div className="bg-white dark:bg-slate-800 p-4 rounded-lg border border-gray-100 dark:border-slate-700 text-sm text-gray-700 dark:text-slate-200 leading-relaxed shadow-inner max-h-80 overflow-y-auto"><div className="flex justify-between items-center mb-2"><span className={`text-xs font-bold ${currentTheme.colors.text} uppercase`}>AI Response</span>
-                      <div className="flex gap-1">
-                          <button onClick={()=>{}} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 p-1" title="Export Response"><Download size={14}/></button>
-                          <button onClick={() => setAiPanelOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 p-1" title="Close"><X size={14}/></button>
-                      </div>
-                      </div><div className="whitespace-pre-wrap">{aiResponse}</div></div>)}</div>}
-                    </div>
-                  )}
-
-                  {sidebarTab === 'bible' && <BibleReader theme={currentTheme} book={bibleState.book} chapter={bibleState.chapter} setBook={(b) => setBibleState(prev => ({...prev, book: b}))} setChapter={(c) => setBibleState(prev => ({...prev, chapter: c}))} />}
-
-                  {sidebarTab === 'notes' && (
-                    <div className="bg-yellow-50 dark:bg-yellow-950/30 p-4 rounded-xl border border-yellow-200 dark:border-yellow-900 shadow-sm h-full flex flex-col relative overflow-hidden">
-                      {/* WARNING BANNER */}
-                      <div className="bg-amber-100 dark:bg-amber-900/50 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-[10px] font-bold px-3 py-1.5 flex items-center gap-2 mb-3 -mx-4 -mt-4">
-                          <AlertTriangle size={12} />
-                          SESSION ACTIVE: NOTES CLEARED ON EXIT
-                      </div>
-
-                      <div className="flex items-center justify-between mb-2"><span className="text-xs font-bold text-yellow-800 dark:text-yellow-200 uppercase tracking-wider">My Notes</span><div className="flex gap-1"><button onClick={() => handleShareNote(selectedArticle.id)} className="text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100 p-1" title="Share Note to App"><Share2 size={16}/></button><button onClick={() => exportNotes(false, selectedArticle.id)} className="text-yellow-700 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-100 p-1" title="Export this note"><Download size={16}/></button></div></div>
-                      <textarea className={`flex-1 w-full bg-white dark:bg-slate-800 border border-yellow-200 dark:border-yellow-900/50 rounded-lg p-3 text-sm text-gray-700 dark:text-slate-200 leading-relaxed focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none resize-none min-h-[300px]`} placeholder="Take notes here..." value={notes[selectedArticle.id] || ""} onChange={(e) => handleNoteChange(selectedArticle.id, e.target.value)}></textarea>
-                      <div className="mt-2 text-xs text-yellow-700 dark:text-yellow-400 flex items-center justify-between"><span>Auto-saved to session</span><span>{notes[selectedArticle.id]?.length || 0} chars</span></div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {/* Removed FloatingNotesWidget from here */}
-          </div>
-      );
+  const handleAddSection = async () => {
+      if(!sectionContent) return;
+      try {
+          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sections'), {
+              content: sectionContent,
+              isPersistent: sectionPersistent,
+              expirationDate: sectionPersistent ? null : sectionExpiry,
+              createdAt: serverTimestamp()
+          });
+          setSectionContent("");
+          setNotification({message: "Section added!"});
+      } catch(e) { setNotification({message: "Failed to add section"}); }
+  };
+  const handleDeleteSection = async (id) => {
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sections', id)); setNotification({message: "Deleted"}); } 
+      catch(e) { setNotification({message: "Failed"}); }
   };
 
+  const callGemini = async (promptType, customPrompt = "") => {
+    if (!selectedArticle) return;
+    setIsAiLoading(true); setAiResponse(""); setAiPanelOpen(true);
+    const apiKey = GEMINI_API_KEY; 
+    if (apiKey === "PASTE_YOUR_GEMINI_API_KEY_HERE" || !apiKey) {
+      setAiResponse("Please set your Gemini API Key.");
+      setIsAiLoading(false);
+      return;
+    }
+    const cleanContent = selectedArticle.content.replace(/<[^>]+>/g, '').substring(0, 30000); 
+    let userQuery = ""; 
+    switch (promptType) { 
+        case 'summary': userQuery = `Summarize this article: "${selectedArticle.title}":\n\n${cleanContent}`; break; 
+        case 'devotional': userQuery = `Write a devotional based on: "${selectedArticle.title}". Content:\n\n${cleanContent}`; break; 
+        case 'chat': userQuery = `Context: "${selectedArticle.title}". Content: ${cleanContent}\n\nQuestion: ${customPrompt}`; break; 
+    } 
+    
+    try { 
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ contents: [{ parts: [{ text: userQuery }] }] }) 
+        }); 
+        const data = await response.json(); 
+        setAiResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "Error generating response."); 
+    } catch (error) { setAiResponse("Error connecting to AI."); }
+    setIsAiLoading(false); 
+  };
+
+  // --- VIEWS ---
+  
   const renderNotesDashboard = () => (
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto animate-fadeIn">
           <div className="flex justify-between items-center mb-6">
             <div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">My Notes</h2>
@@ -2016,444 +1006,337 @@ function App() {
             )}
           </div>
           <div className="grid gap-4">
-              {Object.entries(notes).map(([id, text]) => {
-                  const article = articles.find(a => a.id === id);
-                  const title = article ? article.title : `Unknown Article (ID: ${id})`;
-
-                  return (
-                    <div key={id} className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-900/50 hover:shadow-sm transition-shadow">
-                        <div className="flex justify-between items-start mb-2">
-                           <div className="font-bold text-yellow-900 dark:text-yellow-100 text-lg flex items-center gap-2">
-                              <StickyNote size={16} className="text-yellow-700 dark:text-yellow-400" />
-                              {title}
-                           </div>
-                           {article && (
-                             <button onClick={() => navigateTo('article', article)} className="text-xs bg-yellow-100 dark:bg-yellow-900/40 hover:bg-yellow-200 dark:hover:bg-yellow-900/60 text-yellow-800 dark:text-yellow-200 px-3 py-1 rounded-full font-medium transition-colors">
-                                View Article
-                             </button>
-                           )}
-                        </div>
-                        <div className="whitespace-pre-wrap text-sm text-gray-700 dark:text-slate-300 border-t border-yellow-100 dark:border-yellow-900/30 pt-2 mt-2">{text}</div>
+              {Object.entries(notes).map(([id, text]) => (
+                <div key={id} className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-900/50 hover:shadow-sm transition-shadow">
+                    <div className="flex justify-between items-start mb-2">
+                       <div className="font-bold text-yellow-900 dark:text-yellow-100 text-lg flex items-center gap-2">
+                          <StickyNote size={16} className="text-yellow-700 dark:text-yellow-400" />
+                          Note for Article ID: {id}
+                       </div>
                     </div>
-                  );
-              })}
+                    <div className="whitespace-pre-wrap text-sm text-gray-700 dark:text-slate-300 border-t border-yellow-100 dark:border-yellow-900/30 pt-2 mt-2">{text}</div>
+                </div>
+              ))}
               {Object.keys(notes).length === 0 && <div className="text-center py-20 text-gray-400 dark:text-slate-500">No notes yet.</div>}
           </div>
       </div>
   );
 
-  const renderAdmin = () => {
-    if(!isAuthenticated) return (
-        <div className="max-w-sm mx-auto mt-20 p-8 bg-white dark:bg-slate-800 rounded-xl shadow-lg text-center">
-            <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Admin Login</h2>
-            <form onSubmit={handleLogin} className="space-y-4">
-                {loginStep === 'password' ? <input type="password" value={passwordInput} onChange={e=>setPasswordInput(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Password (*)" /> : <input value={mfaInput} onChange={e=>setMfaInput(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Code (*)" />}
-                {loginError && <p className="text-red-500 text-sm">{loginError}</p>}
-                <button className="w-full py-2 bg-indigo-600 text-white rounded font-bold">Next</button>
-            </form>
-        </div>
-    );
-
-    // PAGINATION & SORTING LOGIC (With Safety Checks)
-    let processedArticles = articles.filter(a => (a.title || "").toLowerCase().includes(adminSearchQuery.toLowerCase()));
-    
-    // Sort logic
-    if (adminSortBy === 'title') {
-        processedArticles.sort((a, b) => adminSortDirection === 'asc' 
-            ? (a.title || "").localeCompare(b.title || "") 
-            : (b.title || "").localeCompare(a.title || ""));
-    } else if (adminSortBy === 'category') {
-        processedArticles.sort((a, b) => {
-             const catA = a.category || "";
-             const catB = b.category || "";
-             const comparison = catA.localeCompare(catB);
-             return adminSortDirection === 'asc' ? comparison : -comparison;
-        });
-    } else {
-        // Date sort (default)
-        processedArticles.sort((a, b) => {
-            const dateA = a.createdAt?.seconds || 0;
-            const dateB = b.createdAt?.seconds || 0;
-            return adminSortDirection === 'asc' ? dateA - dateB : dateB - dateA;
-        });
-    }
-
-    const indexOfLastItem = adminPage * adminPageSize;
-    const indexOfFirstItem = indexOfLastItem - adminPageSize;
-    const paginatedArticles = processedArticles.slice(indexOfFirstItem, indexOfLastItem);
-    const totalPages = Math.ceil(processedArticles.length / adminPageSize);
-
-    return (
-        <div className="max-w-6xl mx-auto flex gap-8">
-            <div className="w-64 space-y-2">
-                <NavItem icon={PenTool} label="Manage" active={adminTab==='manage'} onClick={()=>setAdminTab('manage')} theme={currentTheme} />
-                <NavItem icon={Plus} label="New Article" active={adminTab==='create'} onClick={()=>setAdminTab('create')} theme={currentTheme} />
-                <NavItem icon={Upload} label="Import XML" active={adminTab==='import'} onClick={()=>setAdminTab('import')} theme={currentTheme} />
-                <NavItem icon={Megaphone} label="Home Sections" active={adminTab === 'sections'} onClick={() => setAdminTab('sections')} theme={currentTheme} />
-                <NavItem icon={Settings} label="Settings" active={adminTab==='settings'} onClick={()=>setAdminTab('settings')} theme={currentTheme} />
-                <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 w-full"><LogOut size={18}/> Logout</button>
-            </div>
-            <div className="flex-1 bg-white dark:bg-slate-800 p-8 rounded-xl border border-gray-200 dark:border-slate-700">
-                {/* ... other admin tabs ... */}
-                
-                {adminTab === 'settings' && (
-                    <div>
-                          <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Settings</h2>
-                          <div className="space-y-4">
-                            <div><label className="block text-sm font-bold text-gray-700 dark:text-slate-300">Site Title</label><input className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={siteTitle} onChange={e=>setSiteTitle(e.target.value)} /></div>
-                            <div><label className="block text-sm font-bold text-gray-700 dark:text-slate-300">Description</label><textarea className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" value={siteDescription} onChange={e=>setSiteDescription(e.target.value)} /></div>
-                            
-                            {/* NEW: Logo Upload with Remove */}
-                            <div>
-                                <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-slate-300">Site Logo (Light Mode)</label>
-                                <div className="flex gap-2 items-center">
-                                    <input type="file" accept="image/*" onChange={(e) => handleLogoUpload(e, 'light')} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                                    {siteLogo && (
-                                        <button onClick={() => setSiteLogo(null)} className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300" title="Remove Logo">
-                                            <Trash2 size={18} />
-                                        </button>
-                                    )}
-                                </div>
-                                {siteLogo && <div className="mt-2 p-2 bg-gray-100 rounded border border-gray-200 inline-block"><img src={siteLogo} alt="Logo Preview" className="h-12 object-contain" /></div>}
-                            </div>
-                            
-                            {/* NEW: Dark Mode Logo Upload */}
-                            <div>
-                                <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-slate-300">Site Logo (Dark Mode)</label>
-                                <div className="flex gap-2 items-center">
-                                    <input type="file" accept="image/*" onChange={(e) => handleLogoUpload(e, 'dark')} className="w-full p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
-                                    {siteLogoDark && (
-                                        <button onClick={() => setSiteLogoDark(null)} className="p-2 bg-red-100 text-red-600 rounded hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300" title="Remove Dark Logo">
-                                            <Trash2 size={18} />
-                                        </button>
-                                    )}
-                                </div>
-                                {siteLogoDark && <div className="mt-2 p-2 bg-slate-800 rounded border border-slate-700 inline-block"><img src={siteLogoDark} alt="Dark Logo Preview" className="h-12 object-contain" /></div>}
-                            </div>
-
-                            {/* ... Font and Color Selectors ... */}
-                            <div>
-                                <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-slate-300">Font Style</label>
-                                <div className="flex gap-2">
-                                    {['sans', 'serif', 'mono'].map(f => (
-                                        <button key={f} onClick={() => setSiteFont(f)} className={`px-3 py-1 border rounded capitalize ${siteFont === f ? 'bg-indigo-100 border-indigo-500 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200' : 'bg-white dark:bg-slate-700 dark:text-slate-300'}`}>{f}</button>
-                                    ))}
-                                </div>
-                            </div>
-                            
-                            <div>
-                                <label className="block text-sm font-bold mb-2 text-gray-700 dark:text-slate-300">Theme Color</label>
-                                <div className="flex gap-2 flex-wrap">
-                                    {Object.keys(COLORS).map(c => (
-                                        <button key={c} onClick={() => setSiteColor(c)} className={`px-3 py-1 border rounded capitalize ${siteColor === c ? 'bg-gray-200 border-gray-500 text-gray-900 dark:bg-slate-600 dark:text-white' : 'bg-white dark:bg-slate-700 dark:text-slate-300'}`}>{c}</button>
-                                    ))}
-                                </div>
-                            </div>
-
-                             {/* NEW MAINTENANCE SECTION */}
-                             <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-700">
-                                <h3 className="font-bold text-gray-800 dark:text-slate-200 mb-4 flex items-center gap-2"><Database size={16}/> Database Maintenance</h3>
-                                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex flex-col gap-3">
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <div className="font-bold text-amber-900 dark:text-amber-100 text-sm">Category Statistics</div>
-                                            <div className="text-xs text-amber-700 dark:text-amber-300">Recalculates category counts shown on home page.</div>
-                                        </div>
-                                        <button onClick={rebuildStats} className="px-3 py-1.5 bg-amber-600 text-white rounded text-sm hover:bg-amber-700 font-medium">Rebuild Categories</button>
-                                    </div>
-                                    <div className="h-px bg-amber-200/50 dark:bg-amber-800/50"></div>
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <div className="font-bold text-amber-900 dark:text-amber-100 text-sm">Recent Articles Cache</div>
-                                            <div className="text-xs text-amber-700 dark:text-amber-300">Generates the 'Recent' list for fast home page loading.</div>
-                                        </div>
-                                        <button onClick={generateRecentStats} className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 font-medium">Generate Cache</button>
-                                    </div>
-                                </div>
-                             </div>
-
-                            <div className="pt-4 border-t border-gray-100 dark:border-slate-700 flex gap-2">
-                                <button onClick={handleSaveSettings} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold hover:bg-indigo-700">Save Settings</button>
-                                <button onClick={() => setImageSeed(s => s + 1)} className="px-4 py-2 bg-gray-200 dark:bg-slate-700 rounded text-sm hover:bg-gray-300 dark:hover:bg-slate-600 dark:text-white">Refresh Images</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* RESTORED: Create Article View */}
-                {adminTab === 'create' && (
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">{editingId ? 'Edit Article' : 'New Article'}</h2>
-                        </div>
-                        <input 
-                            className="w-full p-3 border rounded-xl dark:bg-slate-700 dark:border-slate-600 dark:text-white font-bold text-lg" 
-                            placeholder="Article Title" 
-                            value={editorTitle} 
-                            onChange={e=>setEditorTitle(e.target.value)} 
-                        />
-                        <div className="relative">
-                            <input 
-                                className="w-full p-3 border rounded-xl dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
-                                placeholder="Category (e.g., Theology, History)" 
-                                value={editorCategory} 
-                                onChange={e=>{setEditorCategory(e.target.value); setShowCategorySuggestions(true);}}
-                                onBlur={()=>setTimeout(()=>setShowCategorySuggestions(false), 200)}
-                            />
-                            {showCategorySuggestions && (
-                                <div className="absolute top-full left-0 w-full bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-lg z-10 mt-1 max-h-40 overflow-y-auto">
-                                    {categories.filter(c => c.toLowerCase().includes(editorCategory.toLowerCase())).map(c => (
-                                        <div key={c} onMouseDown={()=>setEditorCategory(c)} className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer text-sm dark:text-white">{c}</div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        <RichTextEditor content={editorContent} onChange={setEditorContent} theme={currentTheme} />
-                        <div className="flex justify-end gap-2 pt-4">
-                            <button onClick={() => setAdminTab('manage')} className="px-4 py-2 text-gray-600 dark:text-slate-300 font-medium hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg">Cancel</button>
-                            <button onClick={handleSaveArticle} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 flex items-center gap-2">
-                                <Save size={18}/> {editingId ? 'Update Article' : 'Publish Article'}
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {adminTab === 'manage' && (
-                    <div>
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Manage Articles</h2>
-                        </div>
-                        
-                        {/* LAZY LOAD WARNING */}
-                        {!isLibraryLoaded ? (
-                            <div className="bg-blue-50 dark:bg-blue-900/20 p-8 rounded-xl text-center border border-blue-100 dark:border-blue-800 flex flex-col items-center gap-4">
-                                <div className="w-12 h-12 bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-200 rounded-full flex items-center justify-center"><Database size={24}/></div>
-                                <div>
-                                    <h3 className="font-bold text-blue-900 dark:text-blue-100 mb-1">Library Not Loaded</h3>
-                                    <p className="text-blue-700 dark:text-blue-300 text-sm max-w-md">To manage articles, the full index needs to be loaded from the database. This may take a moment for large libraries.</p>
-                                </div>
-                                <button onClick={loadFullLibrary} disabled={isLoading} className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-2">
-                                    {isLoading ? <Loader className="animate-spin" size={16}/> : <Download size={16}/>}
-                                    {isLoading ? "Loading Index..." : "Load Full Library"}
-                                </button>
-                            </div>
-                        ) : (
-                            // Existing Management UI
-                            <div>
-                                <div className="flex justify-end mb-4">
-                                    <button onClick={handleDeleteAll} className="px-3 py-1 bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-300 rounded text-sm hover:bg-red-100 dark:hover:bg-red-900/40 font-bold border border-red-200 dark:border-red-800">Delete All Articles</button>
-                                </div>
-                                
-                                {/* NEW: Pagination & Search Controls */}
-                                <div className="flex flex-col gap-4 mb-4">
-                                    <div className="flex gap-4">
-                                        <input 
-                                            className="flex-1 p-2 border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
-                                            placeholder="Filter articles..." 
-                                            value={adminSearchQuery} 
-                                            onChange={e => { setAdminSearchQuery(e.target.value); setAdminPage(1); }} 
-                                        />
-                                        <select 
-                                            className="p-2 border rounded bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white"
-                                            value={adminPageSize}
-                                            onChange={(e) => { setAdminPageSize(Number(e.target.value)); setAdminPage(1); }}
-                                        >
-                                            <option value={10}>10 per page</option>
-                                            <option value={50}>50 per page</option>
-                                            <option value={100}>100 per page</option>
-                                        </select>
-                                    </div>
-                                    
-                                    {/* NEW: Sort Controls */}
-                                    <div className="flex gap-2 items-center flex-wrap">
-                                        <span className="text-sm font-bold text-gray-500 dark:text-slate-400">Sort by:</span>
-                                        <select 
-                                            className="p-2 border rounded bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white text-sm"
-                                            value={adminSortBy}
-                                            onChange={(e) => setAdminSortBy(e.target.value)}
-                                        >
-                                            <option value="date">Date Created</option>
-                                            <option value="title">Title (A-Z)</option>
-                                            <option value="category">Category</option>
-                                        </select>
-                                        <button 
-                                            onClick={() => setAdminSortDirection(d => d === 'asc' ? 'desc' : 'asc')}
-                                            className="p-2 border rounded hover:bg-gray-50 dark:bg-slate-700 dark:border-slate-600 dark:hover:bg-slate-600 dark:text-white flex items-center gap-1 text-sm font-medium"
-                                        >
-                                            {adminSortDirection === 'asc' ? <ArrowUp size={16}/> : <ArrowDown size={16}/>}
-                                            {adminSortDirection === 'asc' ? 'Ascending' : 'Descending'}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* List */}
-                                <div className="space-y-2">
-                                    {paginatedArticles.map(a => (
-                                        <div key={a.id} className="flex justify-between p-2 border rounded dark:border-slate-700 dark:bg-slate-750">
-                                            <div className="flex flex-col">
-                                                <span className="font-medium dark:text-slate-200">{a.title}</span>
-                                                <span className="text-xs text-gray-400">{a.category || <i>Uncategorized</i>} • {new Date(a.createdAt?.seconds * 1000).toLocaleDateString()}</span>
-                                            </div>
-                                            <div className="flex gap-2 items-center">
-                                                <button onClick={()=>{setEditingId(a.id); setEditorTitle(a.title); setEditorCategory(a.category); setEditorContent(a.content); setAdminTab('create');}} className="text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 p-1 rounded"><Edit size={16}/></button>
-                                                <button onClick={()=>handleDelete(a.id)} className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 p-1 rounded"><Trash2 size={16}/></button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {paginatedArticles.length === 0 && <div className="text-gray-400 text-sm text-center py-4">No articles found.</div>}
-                                </div>
-                                
-                                {/* NEW: Pagination Footer */}
-                                <div className="flex justify-between items-center mt-4 text-sm text-gray-600 dark:text-slate-400">
-                                    <div>Showing {paginatedArticles.length > 0 ? indexOfFirstItem + 1 : 0}-{Math.min(indexOfLastItem, processedArticles.length)} of {processedArticles.length}</div>
-                                    <div className="flex gap-2">
-                                        <button disabled={adminPage === 1} onClick={() => setAdminPage(p => p - 1)} className="px-3 py-1 border rounded hover:bg-gray-50 dark:border-slate-600 dark:hover:bg-slate-700 disabled:opacity-50">Previous</button>
-                                        <span className="px-2 py-1">Page {adminPage} of {totalPages || 1}</span>
-                                        <button disabled={adminPage >= totalPages} onClick={() => setAdminPage(p => p + 1)} className="px-3 py-1 border rounded hover:bg-gray-50 dark:border-slate-600 dark:hover:bg-slate-700 disabled:opacity-50">Next</button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-                
-                {/* ... other tabs ... */}
-                {adminTab === 'import' && ( /* ... Import UI ... */ 
-                    <div>
-                        <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Import XML</h2>
-                        {/* ... Import UI Logic ... */}
-                        {importState === 'idle' && (
-                            <div className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-xl p-8 text-center hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors group cursor-pointer relative">
-                                <Upload className="mx-auto h-12 w-12 text-gray-400 group-hover:text-indigo-500 transition-colors mb-4"/>
-                                <p className="text-sm text-gray-600 dark:text-slate-300 font-medium mb-1">Click to upload XML</p>
-                                <input type="file" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".xml" />
-                            </div>
-                        )}
-                        {/* ... Active/Completed States ... */}
-                        {(importState === 'active' || importState === 'paused' || importState === 'completed') && (
-                            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
-                                <div className="mb-4 text-gray-900 dark:text-white">
-                                    <div className="flex justify-between mb-1"><span className="font-bold">{importStatus}</span><span>{importProgress}%</span></div>
-                                    <div className="w-full bg-gray-100 dark:bg-slate-700 rounded-full h-2"><div className="bg-blue-600 h-2 rounded-full" style={{width: `${importProgress}%`}}></div></div>
-                                </div>
-                                <div className="flex gap-2">
-                                    {importState === 'active' && (
-                                        <button onClick={() => { abortImportRef.current = true; }} className="bg-amber-500 text-white px-4 py-2 rounded hover:bg-amber-600 flex items-center gap-2">
-                                            <PauseCircle size={18}/> Pause
-                                        </button>
-                                    )}
-                                    {importState === 'paused' && (
-                                        <button onClick={() => { abortImportRef.current = false; setImportState('active'); runImport(pagesRef.current); }} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 flex items-center gap-2">
-                                            <PlayCircle size={18}/> Resume
-                                        </button>
-                                    )}
-                                    {importState === 'completed' && (
-                                        <button onClick={()=>{setImportState('idle'); setImportProgress(0);}} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Import Another</button>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* ... Sections Tab ... */}
-                {adminTab === 'sections' && ( /* ... Sections UI ... */ 
-                    <div>
-                        <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Manage Home Sections</h2>
-                          <RichTextEditor content={sectionContent} onChange={setSectionContent} theme={currentTheme} />
-                          <div className="mt-4 flex gap-4 text-gray-700 dark:text-slate-300">
-                            <label><input type="checkbox" checked={sectionPersistent} onChange={e=>setSectionPersistent(e.target.checked)}/> Persistent</label>
-                            {!sectionPersistent && <input type="date" value={sectionExpiry} onChange={e=>setSectionExpiry(e.target.value)} className="ml-2 p-1 border rounded dark:bg-slate-700 dark:border-slate-600" />}
-                        </div>
-                        <button onClick={handleAddSection} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Add Section</button>
-                        <div className="mt-8 space-y-2">
-                           {customSections.map(s => (
-                               <div key={s.id} className="p-3 border rounded flex justify-between dark:border-slate-700 dark:bg-slate-750">
-                                  <div className="text-sm truncate w-64 text-gray-600 dark:text-slate-300">{s.content.replace(/<[^>]+>/g, '')}</div>
-                                  <button onClick={() => handleDeleteSection(s.id)} className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 p-1 rounded transition-colors"><Trash2 size={16}/></button>
-                               </div>
-                           ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-  };
-
   return (
-    <div className={`min-h-screen bg-gray-50 dark:bg-slate-900 ${currentTheme.font}`}>
-      {/* IMPROVED NOTIFICATION TICKER */}
-      {notification && (
-        <div className="fixed top-6 right-6 z-[100] animate-fadeIn">
-            <div className="bg-slate-900 dark:bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700/50 backdrop-blur-sm">
-            <CheckCircle className="text-emerald-400" size={20} />
-            <span className="font-medium">{notification.message}</span>
-            </div>
-        </div>
-      )}
-
-      {/* Persistent AI Librarian Widget */}
-      <AiLibrarianWidget articles={articles} navigateTo={navigateTo} />
+    <div className={`min-h-screen bg-gray-50 dark:bg-slate-900 ${currentTheme.font} ${isDarkMode ? 'dark' : ''}`}>
+      {notification && <div className="fixed top-6 right-6 z-[100] bg-slate-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3">{notification.message}</div>}
 
       <header className="sticky top-0 bg-white dark:bg-slate-800 border-b z-50 border-gray-200 dark:border-slate-700">
         <div className="max-w-7xl mx-auto px-4 h-24 flex items-center justify-between">
-           <div className="flex items-center gap-2 font-bold text-xl cursor-pointer text-gray-900 dark:text-white" onClick={()=>handleNavClick('home')}>
-             {/* DYNAMIC LOGO SWITCHER */}
-             {isDarkMode && siteLogoDark ? (
-                 <img src={siteLogoDark} alt={siteTitle} className="h-20 object-contain" />
-             ) : siteLogo ? (
-                 <img src={siteLogo} alt={siteTitle} className="h-20 object-contain" />
-             ) : (
-                 <><Book/> {siteTitle}</>
-             )}
+           <div className="flex items-center gap-2 font-bold text-xl cursor-pointer text-gray-900 dark:text-white" onClick={()=>setView('home')}>
+             {siteLogo ? <img src={isDarkMode && siteLogoDark ? siteLogoDark : siteLogo} className="h-20 object-contain" /> : <><Book/> {siteTitle}</>}
            </div>
            <nav className="flex gap-4">
-               <NavItem icon={Layout} label="Home" active={view==='home'} onClick={()=>handleNavClick('home')} theme={currentTheme} />
-               <NavItem icon={Search} label="Search" active={view==='search'} onClick={()=>handleNavClick('search')} theme={currentTheme} />
-               <NavItem icon={StickyNote} label="Notes" active={view==='notes'} onClick={()=>handleNavClick('notes')} theme={currentTheme} />
-               <NavItem icon={Settings} label="Admin" active={view==='admin'} onClick={()=>handleNavClick('admin')} theme={currentTheme} />
+               {['home','search','notes','admin'].map(t => <NavItem key={t} icon={t==='home'?Layout:t==='search'?Search:t==='notes'?StickyNote:Settings} label={t.charAt(0).toUpperCase()+t.slice(1)} active={view===t} onClick={()=>setView(t)} theme={currentTheme}/>)}
            </nav>
         </div>
       </header>
-      <main className="p-6">
-         {view === 'home' && renderHome()}
-         {view === 'search' && renderSearch()}
-         {view === 'article' && renderArticle()}
-         {view === 'notes' && renderNotesDashboard()}
-         {view === 'admin' && renderAdmin()}
-      </main>
-      
-      {view === 'article' && selectedArticle && (
-        <FloatingNotesWidget 
-            article={selectedArticle} 
-            noteContent={notes[selectedArticle.id] || ''} 
-            onChange={(id, txt) => handleNoteChange(id, txt)} 
-            onExport={() => exportNotes(false, selectedArticle.id)} 
-            onShare={() => handleShareNote(selectedArticle.id)} 
-            visible={showNoteWidget} 
-            setVisible={setShowNoteWidget} 
-            theme={currentTheme} 
-        />
-      )}
 
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } 
-        .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-slideUp { animation: slideUp 0.3s ease-out forwards; }
-      `}</style>
+      <main className="p-6">
+         {view === 'home' && (
+             <div className="max-w-4xl mx-auto space-y-12 animate-fadeIn">
+                 <div className="text-center py-6">
+                    <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-6 flex items-center justify-center gap-4">
+                       {siteTitle}
+                    </h1>
+                    <div className="w-full mb-8 px-4">
+                      <div className={`relative rounded-2xl ${currentTheme.colors.bgSoft} border ${currentTheme.colors.border} shadow-sm text-center transition-all duration-300 ${isWelcomeMinimized ? 'p-4' : 'p-6'}`}>
+                        <button 
+                          onClick={() => setIsWelcomeMinimized(!isWelcomeMinimized)}
+                          className={`absolute top-2 right-2 p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 ${currentTheme.colors.text} opacity-50 hover:opacity-100 transition-opacity`}
+                          title={isWelcomeMinimized ? "Expand" : "Minimize"}
+                        >
+                          {isWelcomeMinimized ? <Maximize2 size={16}/> : <Minimize2 size={16}/>}
+                        </button>
+
+                        <div className={`${currentTheme.textColor} ${isWelcomeMinimized ? 'text-sm' : 'text-lg'} leading-relaxed font-medium`}>
+                          {isWelcomeMinimized ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="truncate max-w-md">{siteDescription.replace('{{count}}', Object.values(dbCategoryCounts).reduce((a,b)=>a+b,0))}</span>
+                              <button onClick={() => setIsWelcomeMinimized(false)} className={`text-xs font-bold underline ${currentTheme.colors.text} whitespace-nowrap`}>Read More</button>
+                            </div>
+                          ) : (
+                            siteDescription.replace('{{count}}', Object.values(dbCategoryCounts).reduce((a,b)=>a+b,0))
+                          )}
+                        </div>
+                        {!isWelcomeMinimized && (
+                          <div className={`absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 ${currentTheme.colors.bgSoft} border-b border-r ${currentTheme.colors.border} transform rotate-45`}></div>
+                        )}
+                      </div>
+                    </div>
+                 </div>
+
+                 <VerseOfTheDayWidget />
+                 {/* Quick Search */}
+                 <form onSubmit={e => {e.preventDefault(); performSearch(searchQuery, null); setView('search');}} className="relative max-w-lg mx-auto mb-8">
+                    <input className="w-full pl-12 pr-4 py-4 rounded-xl border shadow-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white" placeholder="Search library..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500"/>
+                 </form>
+
+                 {/* Categories */}
+                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {Object.entries(dbCategoryCounts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([cat, n]) => (
+                        <div key={cat} onClick={()=>{performSearch(null, cat); setView('search');}} className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 cursor-pointer hover:shadow-md">
+                            <div className="font-bold text-gray-900 dark:text-white">{cat}</div>
+                            <div className="text-xs text-gray-500">{n} Articles</div>
+                        </div>
+                    ))}
+                 </div>
+
+                 {/* Recent */}
+                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Recent Additions</h2>
+                 <div className="space-y-4">
+                    {recentArticles.map(a => (
+                        <div key={a.id} onClick={()=>{setSelectedArticle(a); setView('article');}} className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 hover:shadow-sm cursor-pointer flex justify-between">
+                            <span className="font-medium dark:text-white">{a.title}</span>
+                            <span className="text-xs text-gray-500">{a.category}</span>
+                        </div>
+                    ))}
+                 </div>
+                 
+                 {/* Custom Home Sections */}
+                 <div className="space-y-8 mt-12">
+                    {customSections.filter(s => s.isPersistent || (s.expirationDate && new Date(s.expirationDate) > new Date())).map(s => (
+                        <div key={s.id} className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
+                             <HtmlContentRenderer html={s.content} theme={currentTheme} onNavigate={()=>{}} onOpenBible={()=>{}} />
+                        </div>
+                    ))}
+                 </div>
+             </div>
+         )}
+
+         {view === 'search' && (
+             <div className="max-w-5xl mx-auto">
+                 <div className="mb-6 flex gap-4">
+                     <input className="flex-1 p-3 border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-white" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search titles..." onKeyDown={e => e.key==='Enter' && performSearch(searchQuery, null)} />
+                     <button onClick={() => performSearch(searchQuery, null)} className="px-6 bg-indigo-600 text-white rounded-lg">Search</button>
+                 </div>
+                 {isLoading && <div className="text-center py-10"><Loader className="animate-spin inline"/> Loading...</div>}
+                 <div className="grid gap-4">
+                     {searchResults.map(a => (
+                         <div key={a.id} onClick={()=>{setSelectedArticle(a); setView('article');}} className="p-6 bg-white dark:bg-slate-800 rounded-xl border hover:shadow-md cursor-pointer dark:border-slate-700">
+                             <h3 className="text-lg font-bold dark:text-white">{a.title}</h3>
+                             <Badge theme={currentTheme}>{a.category}</Badge>
+                         </div>
+                     ))}
+                     {!isLoading && searchResults.length === 0 && <div className="text-center text-gray-500">No results found. Try a different term.</div>}
+                 </div>
+             </div>
+         )}
+         
+         {view === 'notes' && renderNotesDashboard()}
+
+         {view === 'admin' && (
+             <div className="max-w-6xl mx-auto flex gap-8">
+                 <div className="w-64 space-y-2">
+                     <NavItem icon={PenTool} label="Manage Articles" active={adminTab==='manage'} onClick={()=>setAdminTab('manage')} theme={currentTheme} />
+                     <NavItem icon={Plus} label="New Article" active={adminTab==='create'} onClick={()=>setAdminTab('create')} theme={currentTheme} />
+                     <NavItem icon={Upload} label="Import XML" active={adminTab==='import'} onClick={()=>setAdminTab('import')} theme={currentTheme} />
+                     <NavItem icon={Megaphone} label="Home Sections" active={adminTab === 'sections'} onClick={() => setAdminTab('sections')} theme={currentTheme} />
+                     <NavItem icon={Settings} label="Settings" active={adminTab==='settings'} onClick={()=>setAdminTab('settings')} theme={currentTheme} />
+                     <button onClick={handleLogout} className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 w-full"><LogOut size={18}/> Logout</button>
+                 </div>
+                 <div className="flex-1 bg-white dark:bg-slate-800 p-8 rounded-xl border border-gray-200 dark:border-slate-700">
+                     {!isAuthenticated ? (
+                         <form onSubmit={handleLogin} className="space-y-4 max-w-sm mx-auto">
+                             <h2 className="text-xl font-bold dark:text-white">Admin Login</h2>
+                             <input type="password" value={passwordInput} onChange={e=>setPasswordInput(e.target.value)} className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" placeholder="Password (admin123)" />
+                             <button className="w-full py-2 bg-indigo-600 text-white rounded">Login</button>
+                         </form>
+                     ) : (
+                         <>
+                            {adminTab === 'manage' && (
+                                <div>
+                                    <div className="flex justify-between mb-4">
+                                        <h2 className="text-xl font-bold dark:text-white">Articles</h2>
+                                        <button onClick={handleDeleteAll} className="text-red-500 text-sm">Delete All</button>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {adminArticles.map(a => (
+                                            <div key={a.id} className="flex justify-between p-2 border rounded dark:border-slate-700">
+                                                <span className="truncate w-2/3 dark:text-slate-200">{a.title}</span>
+                                                <div className="flex gap-2">
+                                                    <button onClick={()=>{setEditingId(a.id); setEditorTitle(a.title); setEditorContent(a.content); setAdminTab('create');}} className="text-blue-500"><Edit size={16}/></button>
+                                                    <button onClick={()=>handleDelete(a.id)} className="text-red-500"><Trash2 size={16}/></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button onClick={()=>fetchAdminArticles(false)} className="mt-4 w-full py-2 bg-gray-100 dark:bg-slate-700 dark:text-white rounded">Load More</button>
+                                </div>
+                            )}
+                            {adminTab === 'create' && (
+                                <div className="space-y-4">
+                                    <input className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" placeholder="Title" value={editorTitle} onChange={e=>setEditorTitle(e.target.value)} />
+                                    <input className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" placeholder="Category" value={editorCategory} onChange={e=>{setEditorCategory(e.target.value); setShowCategorySuggestions(true);}} />
+                                    {showCategorySuggestions && (
+                                        <div className="border rounded max-h-40 overflow-y-auto dark:border-slate-600">
+                                            {categories.filter(c => c.toLowerCase().includes(editorCategory.toLowerCase())).map(c => (
+                                                <div key={c} onMouseDown={()=>{setEditorCategory(c); setShowCategorySuggestions(false);}} className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer dark:text-slate-200">{c}</div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <RichTextEditor content={editorContent} onChange={setEditorContent} theme={currentTheme} />
+                                    <button onClick={handleSaveArticle} className="px-6 py-2 bg-indigo-600 text-white rounded">Save</button>
+                                </div>
+                            )}
+                            {adminTab === 'import' && (
+                                <div>
+                                    <h2 className="text-xl font-bold mb-4 dark:text-white">Import XML</h2>
+                                    {importState === 'idle' ? (
+                                        <input type="file" onChange={(e)=>{e.persist(); if(e.target.files[0]){const r=new FileReader(); r.onload=(ev)=>{pagesRef.current=new DOMParser().parseFromString(ev.target.result,"text/xml").getElementsByTagName("page"); setImportState('active'); runImport(pagesRef.current);}; r.readAsText(e.target.files[0]);}}} />
+                                    ) : (
+                                        <div>
+                                            <div className="mb-2 font-bold dark:text-white">{importStatus}</div>
+                                            <div className="w-full bg-gray-200 rounded h-2"><div className="bg-blue-600 h-2 rounded" style={{width: `${importProgress}%`}}></div></div>
+                                            <div className="flex gap-2 mt-4">
+                                                <button onClick={()=>{abortImportRef.current=true}} className="px-4 py-2 bg-amber-500 text-white rounded">Pause</button>
+                                                <button onClick={()=>{abortImportRef.current=false; setImportState('active'); runImport(pagesRef.current)}} className="px-4 py-2 bg-green-600 text-white rounded">Resume</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {adminTab === 'settings' && (
+                                <div className="space-y-4">
+                                    <h2 className="text-xl font-bold mb-4 dark:text-white">Settings</h2>
+                                    <div><label className="block text-sm font-bold dark:text-slate-300">Site Title</label><input className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" value={siteTitle} onChange={e=>setSiteTitle(e.target.value)} /></div>
+                                    <div><label className="block text-sm font-bold dark:text-slate-300">Description</label><textarea className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" value={siteDescription} onChange={e=>setSiteDescription(e.target.value)} /></div>
+                                    <div>
+                                        <label className="block text-sm font-bold mb-2 dark:text-slate-300">Site Logo (Light)</label>
+                                        <div className="flex gap-2 items-center">
+                                            <input type="file" accept="image/*" onChange={(e) => handleLogoUpload(e, 'light')} className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" />
+                                            {siteLogo && <button onClick={() => setSiteLogo(null)} className="p-2 bg-red-100 text-red-600 rounded"><Trash2 size={18}/></button>}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold mb-2 dark:text-slate-300">Site Logo (Dark)</label>
+                                        <div className="flex gap-2 items-center">
+                                            <input type="file" accept="image/*" onChange={(e) => handleLogoUpload(e, 'dark')} className="w-full p-2 border rounded dark:bg-slate-700 dark:text-white" />
+                                            {siteLogoDark && <button onClick={() => setSiteLogoDark(null)} className="p-2 bg-red-100 text-red-600 rounded"><Trash2 size={18}/></button>}
+                                        </div>
+                                    </div>
+
+                                    {/* RESTORED: Font Selector */}
+                                    <div>
+                                        <label className="block text-sm font-bold mb-2 dark:text-slate-300">Font Style</label>
+                                        <div className="flex gap-2">
+                                            {Object.keys(FONTS).map(f => (
+                                                <button key={f} onClick={() => setSiteFont(f)} className={`px-3 py-1 border rounded capitalize ${siteFont === f ? 'bg-indigo-100 border-indigo-500 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200' : 'bg-white dark:bg-slate-700 dark:text-slate-300'}`}>{f}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    
+                                    {/* RESTORED: Theme Color Selector */}
+                                    <div>
+                                        <label className="block text-sm font-bold mb-2 dark:text-slate-300">Theme Color</label>
+                                        <div className="flex gap-2 flex-wrap">
+                                            {Object.keys(COLORS).map(c => (
+                                                <button key={c} onClick={() => setSiteColor(c)} className={`px-3 py-1 border rounded capitalize ${siteColor === c ? 'bg-gray-200 border-gray-500 text-gray-900 dark:bg-slate-600 dark:text-white' : 'bg-white dark:bg-slate-700 dark:text-slate-300'}`}>{c}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* RESTORED: Maintenance Section */}
+                                     <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-700">
+                                        <h3 className="font-bold text-gray-800 dark:text-slate-200 mb-4 flex items-center gap-2"><Database size={16}/> Database Maintenance</h3>
+                                        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex flex-col gap-3">
+                                            <div className="flex justify-between items-center">
+                                                <div>
+                                                    <div className="font-bold text-amber-900 dark:text-amber-100 text-sm">Category Statistics</div>
+                                                    <div className="text-xs text-amber-700 dark:text-amber-300">Recalculates category counts shown on home page.</div>
+                                                </div>
+                                                <button onClick={rebuildStats} className="px-3 py-1.5 bg-amber-600 text-white rounded text-sm hover:bg-amber-700 font-medium">Rebuild Categories</button>
+                                            </div>
+                                            <div className="h-px bg-amber-200/50 dark:bg-amber-800/50"></div>
+                                            <div className="flex justify-between items-center">
+                                                <div>
+                                                    <div className="font-bold text-amber-900 dark:text-amber-100 text-sm">Recent Articles Cache</div>
+                                                    <div className="text-xs text-amber-700 dark:text-amber-300">Generates the 'Recent' list for fast home page loading.</div>
+                                                </div>
+                                                <button onClick={generateRecentStats} className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 font-medium">Generate Cache</button>
+                                            </div>
+                                        </div>
+                                     </div>
+
+                                    <div className="flex gap-2 mt-4">
+                                        <button onClick={handleSaveSettings} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold">Save Settings</button>
+                                        <button onClick={() => setImageSeed(s => s + 1)} className="px-4 py-2 bg-gray-200 dark:bg-slate-700 rounded text-sm hover:bg-gray-300 dark:hover:bg-slate-600 dark:text-white">Refresh Images</button>
+                                    </div>
+                                </div>
+                            )}
+                            {adminTab === 'sections' && (
+                                <div className="space-y-4">
+                                    <h2 className="text-xl font-bold mb-4 dark:text-white">Home Sections</h2>
+                                    <RichTextEditor content={sectionContent} onChange={setSectionContent} theme={currentTheme} />
+                                    <div className="flex gap-4 items-center">
+                                        <label className="flex items-center gap-2 dark:text-white"><input type="checkbox" checked={sectionPersistent} onChange={e=>setSectionPersistent(e.target.checked)}/> Persistent</label>
+                                        {!sectionPersistent && <input type="date" value={sectionExpiry} onChange={e=>setSectionExpiry(e.target.value)} className="p-1 border rounded dark:bg-slate-700 dark:text-white" />}
+                                    </div>
+                                    <button onClick={handleAddSection} className="px-4 py-2 bg-blue-600 text-white rounded">Add Section</button>
+                                    <div className="mt-4 space-y-2">
+                                        {customSections.map(s => (
+                                            <div key={s.id} className="p-2 border rounded flex justify-between dark:border-slate-700">
+                                                <span className="truncate w-2/3 dark:text-slate-300">{s.content.replace(/<[^>]+>/g, '')}</span>
+                                                <button onClick={()=>handleDeleteSection(s.id)} className="text-red-500"><Trash2 size={16}/></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                         </>
+                     )}
+                 </div>
+             </div>
+         )}
+
+         {view === 'article' && selectedArticle && (
+             <div className="max-w-4xl mx-auto bg-white dark:bg-slate-800 p-8 rounded-xl shadow border border-gray-100 dark:border-slate-700 animate-fadeIn relative flex gap-8">
+                 <div className="flex-1">
+                     <button onClick={()=>setView('search')} className="mb-6 flex items-center gap-2 text-gray-500"><ArrowLeft size={16}/> Back</button>
+                     <h1 className="text-4xl font-bold mb-4 dark:text-white">{selectedArticle.title}</h1>
+                     <Badge theme={currentTheme}>{selectedArticle.category}</Badge>
+                     <div className="mt-8 prose max-w-none dark:text-slate-300">
+                         <HtmlContentRenderer html={selectedArticle.content} theme={currentTheme} onNavigate={handleNavigateByTitle} onOpenBible={handleOpenBible} />
+                     </div>
+                 </div>
+                 
+                 {/* Sidebar Restored */}
+                 <div className="w-80 flex-shrink-0 space-y-4">
+                     <div className="flex bg-gray-100 dark:bg-slate-700 p-1 rounded-lg">
+                        {['ai','bible','notes'].map(t => <button key={t} onClick={()=>setSidebarTab(t)} className={`flex-1 p-2 rounded capitalized text-sm ${sidebarTab===t ? 'bg-white dark:bg-slate-600 shadow' : 'text-gray-500'}`}>{t.toUpperCase()}</button>)}
+                     </div>
+                     {sidebarTab === 'ai' && (
+                         <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-xl space-y-4">
+                             <button onClick={()=>callGemini('summary')} className="w-full p-2 bg-white dark:bg-slate-600 rounded text-sm text-left">📝 Summarize</button>
+                             <button onClick={()=>callGemini('devotional')} className="w-full p-2 bg-white dark:bg-slate-600 rounded text-sm text-left">🙏 Devotional</button>
+                             <div>
+                                 <input className="w-full p-2 border rounded dark:bg-slate-600 dark:text-white text-sm" placeholder="Ask AI..." value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} />
+                                 <button onClick={()=>callGemini('chat', aiPrompt)} className="mt-2 w-full bg-indigo-600 text-white p-2 rounded text-sm">Ask</button>
+                             </div>
+                             {aiPanelOpen && <div className="mt-4 p-2 bg-white dark:bg-slate-600 rounded text-sm max-h-60 overflow-y-auto whitespace-pre-wrap dark:text-slate-200">{isAiLoading ? "Thinking..." : aiResponse}</div>}
+                         </div>
+                     )}
+                     {sidebarTab === 'bible' && <BibleReader theme={currentTheme} book={bibleState.book} chapter={bibleState.chapter} setBook={b=>setBibleState(s=>({...s, book:b}))} setChapter={c=>setBibleState(s=>({...s, chapter:c}))} />}
+                     {sidebarTab === 'notes' && (
+                        <div className="bg-yellow-50 dark:bg-slate-700 p-4 rounded-xl h-full">
+                            <div className="text-xs font-bold text-yellow-800 mb-2">SESSION NOTES</div>
+                            <textarea className="w-full h-64 p-2 bg-white dark:bg-slate-600 rounded border border-yellow-200 text-sm" value={notes[selectedArticle.id]||""} onChange={e=>handleNoteChange(selectedArticle.id, e.target.value)}></textarea>
+                            <button onClick={()=>handleShareNote(selectedArticle.id)} className="mt-2 text-xs text-blue-600 underline">Copy Note</button>
+                        </div>
+                     )}
+                 </div>
+             </div>
+         )}
+      </main>
     </div>
   );
 }
 
-// --- APP WRAPPER ---
-function AppWrapper() {
-  return (
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  );
-}
-
+function AppWrapper() { return <ErrorBoundary><App /></ErrorBoundary>; }
 export default AppWrapper;
